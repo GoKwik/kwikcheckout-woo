@@ -1,0 +1,101 @@
+.gokwik-settings-page {
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.gokwik-logo {
+    display: block;
+    max-width: 200px;
+    margin: 0;
+}
+
+.woocommerce .form-table th,
+.woocommerce .form-table td {
+    padding: 20px 10px;
+}
+
+.gokwik-settings-page h2:not(.nav-tab-wrapper h2) {
+    font-size: 20px;
+    margin-top: 25px;
+    margin-bottom: 15px;
+}
+
+.gokwik-nav-tab-wrapper {
+    border-bottom: 1px solid #ccc;
+    margin-bottom: 20px;
+}
+
+.gokwik-nav-tab {
+    background: #f1f1f1;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    color: #555;
+    padding: 10px 20px;
+    text-decoration: none;
+    margin-right: 5px;
+    border-radius: 5px 5px 0 0;
+}
+
+@media (max-width: 600px) {
+    .gokwik-nav-tab {
+        border-radius: 5px;
+    }
+}
+
+.gokwik-nav-tab-active {
+    background: #fff;
+    border-bottom: 1px solid #fff;
+    color: #0073aa;
+}
+
+.gokwik-settings-page label:has(input[type="checkbox"]) {
+    margin: 0px !important;
+}
+
+.gokwik-settings-page input[type="checkbox"]:has(+ .slider) {
+    display: none;
+}
+
+.gokwik-settings-page .slider {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    cursor: pointer;
+    background-color: #ebebeb;
+    border-radius: 12px;
+    transition: .3s all ease-in-out;
+    vertical-align: middle;
+}
+
+.gokwik-settings-page .slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background-color: #ffffff;
+    border-radius: 50%;
+    transition: .3s all ease-in-out;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, .10);
+}
+
+.gokwik-settings-page input[type="checkbox"]:checked+.slider {
+    background-color: #0073aa;
+}
+
+.gokwik-settings-page input[type="checkbox"]:checked+.slider:before {
+    transform: translateX(26px);
+    box-shadow: -2px 0 8px rgba(0, 0, 0, .10);
+}
+
+.gokwik-settings-page input[type="checkbox"]:active+.slider:before {
+    width: 26px;
+}
+
+.gokwik-settings-page input[type="checkbox"]:checked:active+.slider:before {
+    transform: translateX(22px);
+}
