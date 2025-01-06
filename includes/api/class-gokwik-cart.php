@@ -739,7 +739,6 @@ class GokwikCart
                     update_user_meta($user_id, $meta_key, $value);
                 }
             }
-            //return new WP_REST_Response(['message' => "Address successfully updated."], 200);
         }
 
         if (!empty($request->get_param('customerEmail'))) {

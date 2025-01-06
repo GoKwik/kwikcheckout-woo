@@ -26,6 +26,9 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 
 ## Changelog
 
+### Version 1.1.0
+- [Feature] Added configuration for capping prepaid discounts
+
 ### Version 1.0.9
 - [Feature] Implemented pending order creation on address page and updated order upon successful payment.
 - [Feature] Added plugin configuration to determine if all cart items or just a single item must meet COD criteria.

@@ -71,6 +71,15 @@ jQuery(document).ready(function () {
         ]);
     }
 
+    jQuery("#wc_settings_gokwik_prepaid_discount_type").on("change", function () {
+        var prepaidDiscountType = jQuery(this).val();
+        if (prepaidDiscountType === "percentage") {
+            jQuery("#wc_settings_gokwik_prepaid_max_discount").closest("tr").fadeIn("fast");
+        } else {
+            jQuery("#wc_settings_gokwik_prepaid_max_discount").closest("tr").fadeOut("fast");
+        }
+    }).trigger("change");
+
     jQuery("#wc_settings_gokwik_cod_products").select2({
         multiple: true,
         ajax: {

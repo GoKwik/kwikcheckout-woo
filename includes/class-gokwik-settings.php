@@ -497,6 +497,17 @@ class GokwikSettings
                 ],
                 'desc_tip' => 'Fixed or percentage-based discount.',
             ],
+            'gokwik_prepaid_max_discount' => [
+                'name' => 'Max Prepaid Discount Amount',
+                'type' => 'number',
+                'desc' => 'Maximum discount amount for Prepaid.',
+                'id' => 'wc_settings_gokwik_prepaid_max_discount',
+                'custom_attributes' => [
+                    'min' => '0',
+                    'step' => '0.01',
+                ],
+                'desc_tip' => 'Specify maximum discount amount for Prepaid.',
+            ],
             'gokwik_prepaid_min_cart_value' => [
                 'name' => 'Min Cart Value for Prepaid Discount',
                 'type' => 'number',
