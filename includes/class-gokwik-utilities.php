@@ -170,6 +170,13 @@ class GokwikUtilities
                 'wc_settings_gokwik_prepaid_min_cart_value_discount',
                 'wc_settings_gokwik_prepaid_max_cart_value_discount'
             );
+
+            $discountType = get_option('wc_settings_gokwik_prepaid_discount_type', 'fixed');
+            $maxDiscount = get_option('wc_settings_gokwik_prepaid_max_discount', '');
+
+            if ($discountType === 'percentage' && $maxDiscount !== '') {
+                $result['discount'] = min($result['discount'], floatval($maxDiscount));
+            }
         }
 
         return $result;
@@ -583,22 +590,27 @@ class GokwikUtilities
      */
     public static function isInternationalUser()
     {
-        $ip_address = WC_Geolocation::get_ip_address();
-        $cache_key = 'gk_user_country_code_' . md5($ip_address);
-        $country_code = wp_cache_get($cache_key);
+        try {
+            $ip_address = WC_Geolocation::get_ip_address();
+            $cache_key = 'gk_user_country_code_' . md5($ip_address);
+            $country_code = wp_cache_get($cache_key);
 
-        if ($country_code === false) {
-            $geolocation = WC_Geolocation::geolocate_ip();
+            if ($country_code === false) {
+                $geolocation = WC_Geolocation::geolocate_ip();
+                $country_code = $geolocation['country'] ?? null;
 
-            if (!empty($geolocation['country'])) {
-                $country_code = $geolocation['country'];
-            } elseif (function_exists('geoip_country_code_by_name')) {
-                $country_code = geoip_country_code_by_name($ip_address);
+                if (!$country_code && function_exists('geoip_country_code_by_name')) {
+                    $country_code = geoip_country_code_by_name($ip_address);
+                }
+
+                if ($country_code) {
+                    wp_cache_set($cache_key, $country_code, '', DAY_IN_SECONDS);
+                }
             }
 
-            wp_cache_set($cache_key, $country_code, '', 86400);
+            return $country_code && $country_code != 'IN';
+        } catch (Exception $e) {
+            return false;
         }
-
-        return $country_code !== 'IN';
     }
 }

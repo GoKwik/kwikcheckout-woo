@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.0.9
+ * Version:               1.1.0
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -31,7 +31,7 @@ if (!defined('WPINC')) {
 
 // Define plugin constants.
 define('GOKWIKCHECKOUT_FILE', __FILE__);
-define('GOKWIKCHECKOUT_VERSION', '1.0.9');
+define('GOKWIKCHECKOUT_VERSION', '1.1.0');
 define('GOKWIKCHECKOUT_DIR', plugin_dir_path(GOKWIKCHECKOUT_FILE));
 define('GOKWIKCHECKOUT_BASENAME', plugin_basename(GOKWIKCHECKOUT_FILE));
 define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', false);
