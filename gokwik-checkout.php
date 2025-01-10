@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.0
+ * Version:               1.1.1
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -16,8 +16,8 @@
  * Requires PHP:          7.0
  * Requires Plugins:      woocommerce
  * WC requires at least:  4.3
- * WC tested up to:       9.3
- * WP tested up to:       6.6
+ * WC tested up to:       9.5
+ * WP tested up to:       6.7
  *
  * @package               Gokwik_Checkout
  * @link                  https://gokwik.co
@@ -31,7 +31,7 @@ if (!defined('WPINC')) {
 
 // Define plugin constants.
 define('GOKWIKCHECKOUT_FILE', __FILE__);
-define('GOKWIKCHECKOUT_VERSION', '1.1.0');
+define('GOKWIKCHECKOUT_VERSION', '1.1.1');
 define('GOKWIKCHECKOUT_DIR', plugin_dir_path(GOKWIKCHECKOUT_FILE));
 define('GOKWIKCHECKOUT_BASENAME', plugin_basename(GOKWIKCHECKOUT_FILE));
 define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', false);
@@ -126,6 +126,10 @@ class GokwikCheckout
         // Load the Settings class.
         require_once GOKWIKCHECKOUT_DIR . 'includes/class-gokwik-settings.php';
         \Gokwik_Checkout\Inc\GokwikSettings::init();
+
+        // Load the Updater class.
+        require_once GOKWIKCHECKOUT_DIR . 'includes/class-gokwik-updater.php';
+        \Gokwik_Checkout\Inc\GokwikUpdater::instance();
 
         // Check if Store Currency is INR.
         if (!in_array(get_woocommerce_currency(), apply_filters('woocommerce_gokwik_supported_currencies', array('INR')), true)) {
