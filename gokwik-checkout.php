@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.1
+ * Version:               1.1.2
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -16,7 +16,7 @@
  * Requires PHP:          7.0
  * Requires Plugins:      woocommerce
  * WC requires at least:  4.3
- * WC tested up to:       9.5
+ * WC tested up to:       9.6
  * WP tested up to:       6.7
  *
  * @package               Gokwik_Checkout
@@ -29,12 +29,55 @@ if (!defined('WPINC')) {
     die;
 }
 
-// Define plugin constants.
+// Define plugin version and configuration constants
+define('GOKWIKCHECKOUT_VERSION', '1.1.2');
+define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', false);
+define('GOKWIKCHECKOUT_DEVELOPMENT_MODE', false);
+
+// Define essential file path constants
 define('GOKWIKCHECKOUT_FILE', __FILE__);
-define('GOKWIKCHECKOUT_VERSION', '1.1.1');
 define('GOKWIKCHECKOUT_DIR', plugin_dir_path(GOKWIKCHECKOUT_FILE));
 define('GOKWIKCHECKOUT_BASENAME', plugin_basename(GOKWIKCHECKOUT_FILE));
-define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', false);
+
+// Define configuration constants
+define('GOKWIKCHECKOUT_ENABLE_CHECKOUT', get_option('wc_settings_gokwik_section_enable_checkout'));
+define('GOKWIKCHECKOUT_MERCHANT_ID', get_option('wc_settings_gokwik_section_mid'));
+define('GOKWIKCHECKOUT_SANDBOX_MODE', get_option('wc_settings_gokwik_section_sandbox_mode', 'yes'));
+define('GOKWIKCHECKOUT_OVERWRITE_NATIVE_CHECKOUT', get_option('wc_settings_gokwik_section_overwrite_native_checkout_page'));
+
+// Determine environment (SANDBOX/PRODUCTION/QA/DEV)
+define('GOKWIKCHECKOUT_ENV', (function() {
+    $dev_mode = strtoupper(GOKWIKCHECKOUT_DEVELOPMENT_MODE);
+    if (in_array($dev_mode, ['QA', 'DEV'])) {
+        return $dev_mode;
+    }
+    
+    return GOKWIKCHECKOUT_SANDBOX_MODE === 'yes' ? 'SANDBOX' : 'PRODUCTION';
+})());
+
+// Define API base URLs and frontend script URLs based on environment
+define('GOKWIKCHECKOUT_API_BASE_URL', (function() {
+    $env_urls = [
+        'DEV' => 'https://api-gw-v4.dev.gokwik.io/dev/',
+        'QA' => 'https://api-gw-v4.dev.gokwik.io/qa/',
+        'SANDBOX' => 'https://api-gw-v4.dev.gokwik.io/sandbox/',
+        'PRODUCTION' => 'https://gkx.gokwik.co/'
+    ];
+    
+    return $env_urls[GOKWIKCHECKOUT_ENV] ?? $env_urls['PRODUCTION'];
+})());
+
+define('GOKWIKCHECKOUT_FRONTEND_SCRIPT_URL', (function() {
+    $script_urls = [
+        'DEV' => 'https://dev.pdp.gokwik.co/v4/build/gokwik.js',
+        'QA' => 'https://qa.pdp.gokwik.co/v4/build/gokwik.js', 
+        'SANDBOX' => 'https://sandbox.pdp.gokwik.co/v4/build/gokwik.js',
+        'PRODUCTION' => 'https://pdp.gokwik.co/v4/build/gokwik.js'
+    ];
+
+    return $script_urls[GOKWIKCHECKOUT_ENV] ?? $script_urls['PRODUCTION'];
+})());
+
 
 // Check if WooCommerce is installed and active.
 if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
@@ -122,7 +165,6 @@ class GokwikCheckout
      */
     public function __construct()
     {
-
         // Load the Settings class.
         require_once GOKWIKCHECKOUT_DIR . 'includes/class-gokwik-settings.php';
         \Gokwik_Checkout\Inc\GokwikSettings::init();
@@ -145,8 +187,7 @@ class GokwikCheckout
         }
 
         // Check if GoKwik mid is set.
-        $gc_mid = get_option('wc_settings_gokwik_section_mid', null);
-        if (empty($gc_mid)) {
+        if (empty(GOKWIKCHECKOUT_MERCHANT_ID)) {
             add_action('admin_notices', function () {?>
                 <div class="notice notice-error">
                     <p>
@@ -160,7 +201,7 @@ class GokwikCheckout
         }
 
         if (
-            get_option('wc_settings_gokwik_section_enable_checkout') == 'yes' &&
+            GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes' &&
             in_array('gokwik-woocommerce-payment/gokwik-gateway.php', apply_filters('active_plugins', get_option('active_plugins')))
         ) {
             add_action('admin_notices', function () {?>
@@ -212,11 +253,7 @@ class GokwikCheckout
 add_action('woocommerce_cart_calculate_fees', 'gc_add_gateway_fees_discounts', PHP_INT_MAX);
 function gc_add_gateway_fees_discounts($cart)
 {
-    if (is_admin()) {
-        return;
-    }
-
-    if (!class_exists('WC_Payment_Gateways')) {
+    if (is_admin() || !class_exists('WC_Payment_Gateways')) {
         return;
     }
 
@@ -230,14 +267,22 @@ function gc_add_gateway_fees_discounts($cart)
     $fee_label = null;
     $discount_label = null;
 
+    $subtotal = $cart->get_subtotal() ?? 0;
+    $shipping_total = $cart->get_shipping_total() ?? 0;
+
+    if (wc_prices_include_tax()) {
+        $subtotal += $cart->get_subtotal_tax() ?? 0;
+        $shipping_total += $cart->get_shipping_tax() ?? 0;
+    }
+
     switch ($chosen_payment_method) {
         case 'cod':
-            $feesAndDiscounts = GokwikUtilities::calculateCodExtraFeesAndDiscount(($cart->get_subtotal() ?? 0) + ($cart->get_shipping_total() ?? 0));
+            $feesAndDiscounts = GokwikUtilities::calculateCodExtraFeesAndDiscount($subtotal + $shipping_total);
             $fee_label = 'COD Fee';
             $discount_label = 'COD Discount';
             break;
         case 'gokwik_prepaid':
-            $feesAndDiscounts = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount(($cart->get_subtotal() ?? 0) + ($cart->get_shipping_total() ?? 0));
+            $feesAndDiscounts = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount($subtotal + $shipping_total);
             $fee_label = 'Prepaid Fee';
             $discount_label = 'Prepaid Discount';
             break;
@@ -274,19 +319,37 @@ function gc_hide_payment_method($gateways)
         return $gateways;
     }
 
-    if (isset($gateways['gokwik_prepaid']) && (get_option('wc_settings_gokwik_section_enable_checkout') != 'yes' || is_checkout() || is_wc_endpoint_url('order-pay'))) {
+    $blocked_shipping_methods = get_option('wc_settings_gokwik_cod_blocked_shipping_methods', []);
+    $chosen_shipping_methods = [];
+
+    if (WC()->session && WC()->session->has_session()) {
+        $chosen_shipping_methods = WC()->session->get('chosen_shipping_methods', []);
+    }
+
+    if (isset($gateways['gokwik_prepaid']) && (!GOKWIKCHECKOUT_ENABLE_CHECKOUT === 'yes' || is_checkout() || is_wc_endpoint_url('order-pay'))) {
         unset($gateways['gokwik_prepaid']);
     }
-    if (isset($gateways['cod']) && !GokwikUtilities::isCodAvailable(WC()->cart)) {
-        unset($gateways['cod']);
+
+    if (isset($gateways['cod'])) {
+        if (!GokwikUtilities::isCodAvailable(WC()->cart)) {
+            unset($gateways['cod']);
+        } else {
+            foreach ($chosen_shipping_methods as $method) {
+                if (in_array($method, $blocked_shipping_methods, true)) {
+                    unset($gateways['cod']);
+                    break;
+                }
+            }
+        }
     }
+
     return $gateways;
 }
 
 /**
  * Endpoint for clearing cart and returning thank-you page URL.
  */
-if (get_option('wc_settings_gokwik_section_enable_checkout') == 'yes') {
+if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_ajax_gc_cart_clear_and_redirect', 'gc_cart_clear_and_redirect');
     add_action('wp_ajax_nopriv_gc_cart_clear_and_redirect', 'gc_cart_clear_and_redirect');
 }
@@ -297,7 +360,19 @@ function gc_cart_clear_and_redirect()
 
     if (isset($_POST['merchant_order_id'])) {
         $merchant_order_id = wc_clean(wp_unslash($_POST['merchant_order_id']));
-        $order = wc_get_order($merchant_order_id);
+        
+        $order_id = $merchant_order_id;
+        if (is_plugin_active('custom-order-numbers-for-woocommerce/custom-order-numbers-for-woocommerce.php')) {
+            $order_query = new WC_Order_Query([
+                'meta_key'   => '_alg_wc_full_custom_order_number',
+                'meta_value' => $merchant_order_id,
+                'limit'      => 1,
+            ]);
+            $orders = $order_query->get_orders();
+            $order_id = $orders[0]->get_id();
+        }
+        
+        $order = wc_get_order($order_id);
         if ($order) {
             $redirectUrl = $order->get_checkout_order_received_url();
             $woocommerce->cart->empty_cart();
@@ -317,7 +392,7 @@ function gc_cart_clear_and_redirect()
 /**
  * Endpoint for fetching Session ID.
  */
-if (get_option('wc_settings_gokwik_section_enable_checkout') == 'yes') {
+if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_ajax_gc_fetch_user_session_id', 'gc_fetch_user_session_id');
     add_action('wp_ajax_nopriv_gc_fetch_user_session_id', 'gc_fetch_user_session_id');
 }
@@ -348,7 +423,7 @@ function gc_fetch_user_session_id()
 /**
  * Endpoint for checking if cart is empty.
  */
-if (get_option('wc_settings_gokwik_section_enable_checkout') == 'yes') {
+if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_ajax_gc_check_cart_status', 'gc_check_cart_status');
     add_action('wp_ajax_nopriv_gc_check_cart_status', 'gc_check_cart_status');
 }
@@ -375,7 +450,7 @@ function gc_check_cart_status()
 /**
  * Enqueue required scripts.
  */
-if (get_option('wc_settings_gokwik_section_enable_checkout') == 'yes') {
+if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_enqueue_scripts', 'gc_enqueue_gokwik_script');
 }
 function gc_enqueue_gokwik_script()
@@ -384,18 +459,13 @@ function gc_enqueue_gokwik_script()
         return;
     }
 
-    $sandbox_mode = get_option('wc_settings_gokwik_section_sandbox_mode') === 'yes';
-    $gcScriptUrl = $sandbox_mode ?
-    "https://sandbox.pdp.gokwik.co/v4/build/gokwik.js" :
-    "https://pdp.gokwik.co/v4/build/gokwik.js";
-
-    wp_enqueue_script('gcScript', $gcScriptUrl, [], null, true);
+    wp_enqueue_script('gcScript', GOKWIKCHECKOUT_FRONTEND_SCRIPT_URL, [], null, true);
 }
 
 /**
  * Enqueue custom js in footer.
  */
-if (get_option('wc_settings_gokwik_section_enable_checkout') == 'yes') {
+if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_enqueue_scripts', 'gc_enqueue_custom_script');
 }
 function gc_enqueue_custom_script()
@@ -406,23 +476,22 @@ function gc_enqueue_custom_script()
     $custom_script_url = plugin_dir_url(GOKWIKCHECKOUT_FILE) . 'assets/js/frontend/gokwik-custom.js';
     $dependencies = ['jquery', 'gcScript'];
     wp_enqueue_script('gcCustomScript', $custom_script_url, $dependencies, time(), true);
-    $overwrite_native_checkout = get_option('wc_settings_gokwik_section_overwrite_native_checkout_page');
 
     $script_data = [
         'ajaxurl' => admin_url('admin-ajax.php'),
-        'environment' => get_option('wc_settings_gokwik_section_sandbox_mode') == 'yes' ? 'sandbox' : 'production',
-        'mid' => get_option('wc_settings_gokwik_section_mid'),
+        'environment' => strtolower(GOKWIKCHECKOUT_ENV),
+        'mid' => GOKWIKCHECKOUT_MERCHANT_ID,
         'is_checkout_page' => is_checkout(),
         'is_order_received' => is_wc_endpoint_url('order-received'),
         'is_cart_empty' => WC()->cart->is_empty(),
         'cart_url' => wc_get_cart_url(),
         'checkout_url' => wc_get_checkout_url(),
         'session_id' => WC()->session->get_session_cookie()[0] ?? null,
-        'overwrite_native_checkout' => empty($overwrite_native_checkout) ? true : $overwrite_native_checkout == 'yes',
+        'overwrite_native_checkout' => empty(GOKWIKCHECKOUT_OVERWRITE_NATIVE_CHECKOUT) ? true : GOKWIKCHECKOUT_OVERWRITE_NATIVE_CHECKOUT == 'yes',
         'gokwik_buy_now_enabled' => get_option('wc_settings_gokwik_section_enable_buy_now_button') == 'yes',
         'is_international_user' => GokwikUtilities::isInternationalUser(),
         'enable_gokwik_checkout_on_side_cart' => get_option('wc_settings_gokwik_section_enable_checkout_from_side_cart', 'yes') == 'yes',
-        'enable_gokwik_checkout_on_cart_page' => get_option('wc_settings_gokwik_section_enable_checkout_from_cart_page', 'yes') == 'yes'
+        'enable_gokwik_checkout_on_cart_page' => get_option('wc_settings_gokwik_section_enable_checkout_from_cart_page', 'yes') == 'yes',
     ];
     wp_localize_script('gcCustomScript', 'gc_data', $script_data);
 }
@@ -430,7 +499,7 @@ function gc_enqueue_custom_script()
 /**
  * Enqueue custom CSS.
  */
-if (get_option('wc_settings_gokwik_section_enable_checkout') == 'yes') {
+if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_enqueue_scripts', 'gc_enqueue_custom_css');
 }
 function gc_enqueue_custom_css()
@@ -440,7 +509,7 @@ function gc_enqueue_custom_css()
     }
     $custom_css_url = plugin_dir_url(GOKWIKCHECKOUT_FILE) . 'assets/css/frontend/gokwik-custom.css';
     wp_enqueue_style('gcCustomCSS', $custom_css_url, [], time());
-    if (is_checkout() && !WC()->cart->is_empty() && get_option('wc_settings_gokwik_section_overwrite_native_checkout_page') != 'no' && !GokwikUtilities::isInternationalUser()) {
+    if (is_checkout() && !WC()->cart->is_empty() && GOKWIKCHECKOUT_OVERWRITE_NATIVE_CHECKOUT != 'no' && !GokwikUtilities::isInternationalUser()) {
         $inline_css = '.woocommerce form.woocommerce-checkout { display: none !important; }';
         wp_add_inline_style('gcCustomCSS', $inline_css);
     }
@@ -519,10 +588,9 @@ function gc_display_ppcod_data_thank_you_page($total_rows, $order)
 add_filter('woocommerce_admin_order_preview_get_order_details', 'gc_add_prepaid_cod_tag_to_order_name', 10, 2);
 function gc_add_prepaid_cod_tag_to_order_name($order_details, $order)
 {
-    $order_id = $order->get_id();
     $is_ppcod = GokwikUtilities::isHposEnabled()
-    ? $order->get_meta('is_ppcod', true)
-    : get_post_meta($order_id, 'is_ppcod', true);
+        ? $order->get_meta('is_ppcod', true)
+        : get_post_meta($order->get_id(), 'is_ppcod', true);
 
     if ($is_ppcod) {
         $order_details['order_number'] .= ' (Prepaid COD Order)';
@@ -543,7 +611,10 @@ function gc_adjust_fee_taxes($taxes, $fee)
 }
 
 // Add "Buy Now" button after the "Add to Cart" button on product pages
-if (get_option('wc_settings_gokwik_section_enable_buy_now_button') == 'yes') {
+if (
+    GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes' && 
+    get_option('wc_settings_gokwik_section_enable_buy_now_button') == 'yes'
+) {
     add_action('woocommerce_after_add_to_cart_button', 'gc_add_buy_now_button');
 }
 function gc_add_buy_now_button()
@@ -554,8 +625,7 @@ function gc_add_buy_now_button()
         return;
     }
 
-    $is_international_user = GokwikUtilities::isInternationalUser();
-    if (!$is_international_user) {
+    if (!GokwikUtilities::isInternationalUser()) {
         echo '<button type="button" class="gk-buy-now-btn single_add_to_cart_button button alt">Buy now</button>';
     }
 }

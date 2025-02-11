@@ -296,6 +296,15 @@ class GokwikSettings
                 'id' => 'wc_settings_gokwik_cod_products',
                 'desc_tip' => 'Select products for COD.',
             ],
+            'gokwik_cod_blocked_shipping_methods' => [
+                'name' => 'COD Blocked Shipping Methods',
+                'type' => 'multiselect',
+                'desc' => 'Select shipping methods for which COD should be blocked.',
+                'id' => 'wc_settings_gokwik_cod_blocked_shipping_methods',
+                'options' => self::get_shipping_methods(),
+                'class' => 'wc-enhanced-select',
+                'desc_tip' => 'Select shipping methods to block COD.',
+            ],
             'section_end_cod_availability' => [
                 'type' => 'sectionend',
                 'id' => 'wc_settings_gokwik_section_end_cod_availability',
@@ -452,6 +461,33 @@ class GokwikSettings
 
         asort($category_options);
         return $category_options;
+    }
+
+    /**
+     * Get the shipping methods for the settings.
+     *
+     * @return array Shipping methods.
+     */
+    private static function get_shipping_methods()
+    {
+        $shipping_options = [];
+        $zones = \WC_Shipping_Zones::get_zones();
+        $zones[] = ['zone_id' => 0];
+
+        foreach ($zones as $zone) {
+            $zone_obj = \WC_Shipping_Zones::get_zone($zone['zone_id']);
+            $zone_name = $zone['zone_id'] === 0 ? 'Rest of the world' : $zone_obj->get_zone_name();
+
+            foreach ($zone_obj->get_shipping_methods() as $method) {
+                if ($method->enabled === 'yes') {
+                    $instance_id = $method->get_instance_id();
+                    $method_title = $method->get_title();
+                    $shipping_options["{$method->id}:{$instance_id}"] = "{$zone_name} - {$method_title} (#{$instance_id})";
+                }
+            }
+        }
+
+        return $shipping_options;
     }
 
     /**

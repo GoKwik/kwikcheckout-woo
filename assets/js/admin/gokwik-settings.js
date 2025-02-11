@@ -59,6 +59,7 @@ jQuery(document).ready(function () {
             "#wc_settings_gokwik_prepaid_min_cart_value_discount",
             "#wc_settings_gokwik_prepaid_max_cart_value_discount"
         ]);
+        jQuery("#wc_settings_gokwik_prepaid_discount_type").trigger("change");
     }
 
     function toggleCheckoutSettings() {
@@ -73,7 +74,8 @@ jQuery(document).ready(function () {
 
     jQuery("#wc_settings_gokwik_prepaid_discount_type").on("change", function () {
         var prepaidDiscountType = jQuery(this).val();
-        if (prepaidDiscountType === "percentage") {
+        var isPrepaidDiscountEnabled = jQuery("#wc_settings_gokwik_enable_prepaid_discount").is(":checked");
+        if (prepaidDiscountType === "percentage" && isPrepaidDiscountEnabled) {
             jQuery("#wc_settings_gokwik_prepaid_max_discount").closest("tr").fadeIn("fast");
         } else {
             jQuery("#wc_settings_gokwik_prepaid_max_discount").closest("tr").fadeOut("fast");

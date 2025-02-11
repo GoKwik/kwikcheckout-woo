@@ -91,6 +91,8 @@ class GokwikCart
             ['route' => '/' . $this->rest_base . '/place-order', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'placeOrder'],
             ['route' => '/' . $this->rest_base . '/check-order-exists', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'checkOrderExists'],
             ['route' => '/' . $this->rest_base . '/update-order-status', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'updateOrderStatus'],
+            ['route' => '/' . $this->rest_base . '/process-refund', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'refundProcess', 'permission_callback' => false],
+            ['route' => '/' . $this->rest_base . '/health-check', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'healthCheck'],
         ];
 
         foreach ($routes as $route) {
@@ -266,7 +268,7 @@ class GokwikCart
         $cart_shipping_method = maybe_unserialize($wc_session_data['chosen_shipping_methods'] ?? []);
         if (!empty($cart_shipping_method)) {
             $current_shipping_method = WC()->session->get('chosen_shipping_methods', []);
-            if ($cart_shipping_method !== $current_shipping_method) {
+            if ($cart_shipping_method != $current_shipping_method) {
                 WC()->session->set('chosen_shipping_methods', $cart_shipping_method);
             }
         }
@@ -274,7 +276,7 @@ class GokwikCart
         $cart_payment_method = maybe_unserialize($wc_session_data['chosen_payment_method'] ?? "");
         if (!empty($cart_payment_method)) {
             $current_payment_method = WC()->session->get('chosen_payment_method', "");
-            if ($cart_payment_method !== $current_payment_method) {
+            if ($cart_payment_method != $current_payment_method) {
                 WC()->session->set('chosen_payment_method', $cart_payment_method);
             }
         }
@@ -282,7 +284,7 @@ class GokwikCart
         $cart_applied_coupon = maybe_unserialize($wc_session_data['applied_coupons'] ?? []);
         if (!empty($cart_applied_coupon)) {
             $current_applied_coupons = WC()->session->get('applied_coupons', []);
-            if ($cart_applied_coupon !== $current_applied_coupons) {
+            if ($cart_applied_coupon != $current_applied_coupons) {
                 WC()->session->set('applied_coupons', $cart_applied_coupon);
             }
         }
@@ -371,23 +373,49 @@ class GokwikCart
             }
 
             foreach ($shipping_rates as $shipping_rate) {
+                $tax_cost = $shipping_rate->get_shipping_tax();
+                $taxes = $shipping_rate->get_taxes();
+                $charge = $shipping_rate->get_cost();
+                if (wc_prices_include_tax()) {
+                    $charge += $tax_cost;
+                }
+
                 $shipping_methods[] = [
                     'method_id' => $shipping_rate->get_id(),
                     'rate_id' => $shipping_rate->get_method_id(),
                     'instance_id' => $shipping_rate->get_instance_id(),
                     'method_name' => $shipping_rate->get_label(),
-                    'charge' => $shipping_rate->get_cost(),
-                    'tax_cost' => $shipping_rate->get_shipping_tax(),
-                    'taxes' => $shipping_rate->get_taxes(),
+                    'charge' => $charge,
+                    'tax_cost' => $tax_cost,
+                    'taxes' => $taxes,
                 ];
             }
         }
 
-        $prepaidFeesAndDiscount = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount((WC()->cart->get_subtotal() ?? 0) + (WC()->cart->get_shipping_total() ?? 0));
+        $blocked_shipping_methods = get_option('wc_settings_gokwik_cod_blocked_shipping_methods', []);
+        if (!empty($cart_shipping_method) && !empty($blocked_shipping_methods)) {
+            foreach ($cart_shipping_method as $method) {
+                foreach ($blocked_shipping_methods as $blocked_method) {
+                    if ($method == $blocked_method || strpos($blocked_method, $method . ':') === 0) {
+                        $codBlock = true;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        $subtotal = WC()->cart->get_subtotal() ?? 0;
+        $shipping_total = WC()->cart->get_shipping_total() ?? 0;
+        if (wc_prices_include_tax()) {
+            $subtotal += WC()->cart->get_subtotal_tax() ?? 0;
+            $shipping_total += WC()->cart->get_shipping_tax() ?? 0;
+        }
+
+        $prepaidFeesAndDiscount = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount($subtotal + $shipping_total);
         $finalPrepaidCharge = $prepaidFeesAndDiscount['fee'];
         $finalPrepaidDiscount = $prepaidFeesAndDiscount['discount'];
 
-        $codFeesAndDiscount = GokwikUtilities::calculateCodExtraFeesAndDiscount((WC()->cart->get_subtotal() ?? 0) + (WC()->cart->get_shipping_total() ?? 0));
+        $codFeesAndDiscount = GokwikUtilities::calculateCodExtraFeesAndDiscount($subtotal + $shipping_total);
         $finalCodCharge = $codFeesAndDiscount['fee'];
         $finalCodDiscount = $codFeesAndDiscount['discount'];
 
@@ -424,6 +452,25 @@ class GokwikCart
             "discount" => $finalPrepaidDiscount,
         ];
 
+        $totals = $cartObj->get_totals();
+        if (wc_prices_include_tax()) {
+            $totals['subtotal'] += $totals['subtotal_tax'] ?? 0;
+            $totals['shipping_total'] += $totals['shipping_tax'] ?? 0;
+            $totals['cart_contents_total'] += $totals['cart_contents_tax'] ?? 0;
+            $totals['fee_total'] += $totals['fee_tax'] ?? 0;
+            $totals['discount_total'] += $totals['discount_tax'] ?? 0;
+            $totals['subtotal_tax'] = 0;
+            $totals['shipping_tax'] = 0;
+            $totals['shipping_taxes'] = [];
+            $totals['cart_contents_tax'] = 0;
+            $totals['cart_contents_taxes'] = [];
+            $totals['fee_tax'] = 0;
+            $totals['fee_taxes'] = [];
+            $totals['discount_tax'] = 0;
+            $totals['discount_taxes'] = [];
+            $totals['total_tax'] = 0;
+        }
+
         $cartResponse = [
             'user_id' => get_current_user_id(),
             'customer_email' => $customerEmail,
@@ -434,7 +481,7 @@ class GokwikCart
             'chosen_payment_method' => $cart_payment_method,
             'shipping_methods' => $shipping_methods,
             'payment_methods' => $payment_methods,
-            'totals' => $cartObj->get_totals(),
+            'totals' => $totals,
         ];
 
         $isPendingOrderFlowEnabled = defined('GOKWIKCHECKOUT_PENDING_ORDER_FLOW') && GOKWIKCHECKOUT_PENDING_ORDER_FLOW;
@@ -1280,8 +1327,13 @@ class GokwikCart
         $order->calculate_totals(false);
         $order->save();
 
+        $orderId = $order->get_id();
+        if (in_array('custom-order-numbers-for-woocommerce/custom-order-numbers-for-woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
+            $orderId = $order->get_meta('_alg_wc_full_custom_order_number');
+        }
+
         $response = new WP_REST_Response(
-            ['id' => $order->get_id()],
+            ['id' => $orderId],
             ['status' => 200]
         );
 
@@ -1574,6 +1626,145 @@ class GokwikCart
         }
 
         return $images;
+    }
+
+    /**
+     * Refund Process.
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     * @since 1.1.2
+     */
+    public function refundProcess($request)
+    {
+        $merchant_order_id = wc_clean(wp_unslash($request->get_param('merchant_order_id')));
+        $refund_amount = wc_clean(wp_unslash($request->get_param('amount')));
+        $merchant_id = wc_clean(wp_unslash($request->get_param('merchant_id')));
+        $event = wc_clean(wp_unslash($request->get_param('event')));
+        $refund_id = wc_clean(wp_unslash($request->get_param('refund_id')));
+
+        if (empty($merchant_order_id) || empty($refund_amount) || empty($merchant_id)) {
+            return new WP_Error(
+                'gc_missing_required_parameters',
+                'Required parameters are missing.',
+                ['status' => 400]
+            );
+        }
+
+        $option_value = get_option('wc_settings_gokwik_section_mid');
+        if ($option_value === false || $option_value !== $merchant_id) {
+            return new WP_REST_Response(
+                ['message' => 'Merchant ID not found.'],
+                404
+            );
+        }
+
+        $order_id = $merchant_order_id;
+        if (is_plugin_active('custom-order-numbers-for-woocommerce/custom-order-numbers-for-woocommerce.php')) {
+            $order_query = new \WC_Order_Query([
+                'meta_key'   => '_alg_wc_full_custom_order_number',
+                'meta_value' => $merchant_order_id,
+                'limit'      => 1,
+            ]);
+            $orders = $order_query->get_orders();
+            if (!empty($orders) && is_array($orders) && isset($orders[0])) {
+                $order_id = $orders[0]->get_id();
+            }
+        }
+
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            return new WP_REST_Response(
+                ['message' => 'Order not found.'],
+                404
+            );
+        }
+
+        $payment_method = $order->get_payment_method();
+        if ($payment_method != "gokwik_prepaid") {
+            return new WP_REST_Response(
+                ['message' => 'Refunds are only for GoKwik prepaid orders.'],
+                404
+            );
+        }
+
+        $total_refund = 0;
+        $refunds = $order->get_refunds();
+        
+        foreach ($refunds as $refund) {
+            $custom_refund_id = $refund->get_meta('_wc_order_refund_id');
+            if ($custom_refund_id != "" && $custom_refund_id == $refund_id) {
+                return new WP_REST_Response(
+                    ['message' => 'Refund already exists.'],
+                    404
+                );
+            }
+            $total_refund += $refund->get_amount();
+        }
+
+        if ($refund_amount > $order->total) {
+            return new WP_REST_Response(
+                ['message' => 'Refund amount exceeds order total.'],
+                404
+            );
+        }
+
+        if ($event == "success") {            
+            $refund_reason = "Partial refund via GoKwik";
+            if ($order->total == ($total_refund + $refund_amount)) {
+                $order->update_status("wc-refunded");
+                $refund_reason = "Full refund via GoKwik";
+            }
+
+            $refund = wc_create_refund([
+                'amount'   => $refund_amount,
+                'reason'   => $refund_reason,
+                'order_id' => $order_id,
+            ]);
+
+            if (is_wp_error($refund)) {
+                return new WP_REST_Response(
+                    ['message' => $refund->get_error_message()],
+                    404
+                );
+            } else {
+                $refund->update_meta_data('_wc_order_refund_id', $refund_id);
+                $refund->set_reason($refund_reason);
+                $refund->save();
+            }
+
+            $order->add_order_note("Refund of " . wc_price($refund_amount) . " processed successfully via GoKwik. Refund ID: $refund_id.");
+        } elseif ($event == "initiated") {
+            $order->add_order_note("Refund of " . wc_price($refund_amount) . " initiated via GoKwik. Refund ID: $refund_id.");
+        }
+
+        return new WP_REST_Response(
+            ['message' => 'Refund processed in WooCommerce.'],
+            200
+        );
+    }
+
+    /**
+     * Perform a health check.
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     */
+    public function healthCheck($request)
+    {
+        global $wp_version;
+        
+        $response_data = [
+            'status' => 'success',
+            'message' => 'API is operational.',
+            'timestamp' => current_time('mysql'),
+            'wordpress_version' => $wp_version,
+            'woocommerce_version' => defined('WC_VERSION') ? WC_VERSION : 'N/A',
+            'plugin_version' => GOKWIKCHECKOUT_VERSION,
+            'php_version' => PHP_VERSION,
+        ];
+
+        return new WP_REST_Response($response_data, 200);
     }
 
 }

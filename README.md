@@ -21,10 +21,16 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 
 ## Compatibility
 
-- Tested up to WooCommerce version: 9.3
-- Tested up to WordPress version: 6.6
+- Tested up to WooCommerce version: 9.6
+- Tested up to WordPress version: 6.7
 
 ## Changelog
+
+### Version 1.1.2
+- [Feature] Added the option to block COD for specific shipping methods.
+- [Feature] Added support for processing refunds.
+- [Feature] Added support for the "Custom Order Numbers" plugin.
+- [Enhancement] Prices will include taxes if configured in the store; otherwise, they will be exclusive of taxes.
 
 ### Version 1.1.1
 - [Feature] Added support for automatic updates.
@@ -82,23 +88,29 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 - Main plugin file and constants definition:
   - `gokwik-checkout.php`
 
-- GoKwik Prepaid Gateway class:
-  - `includes/class-gokwik-prepaid-gateway.php`
-
 - Frontend custom JavaScript:
   - `assets/js/frontend/gokwik-custom.js`
 
 - Admin settings JavaScript:
   - `assets/js/admin/gokwik-settings.js`
 
-- REST API endpoints for cart management:
-  - `includes/api/class-gokwik-cart.php`
+- Frontend custom CSS:
+  - `assets/css/frontend/gokwik-custom.css`
+
+- GoKwik Prepaid Gateway class:
+  - `includes/class-gokwik-prepaid-gateway.php`
 
 - Utility functions for order processing:
   - `includes/class-gokwik-utilities.php`
 
-- Frontend custom CSS:
-  - `assets/css/frontend/gokwik-custom.css`
+- GoKwik Settings class:
+  - `includes/class-gokwik-settings.php`
+  
+- Plugin updater class:
+  - `includes/class-gokwik-updater.php`
+  
+- REST API endpoints for cart management:
+  - `includes/api/class-gokwik-cart.php`
 
 ## Contributing
 

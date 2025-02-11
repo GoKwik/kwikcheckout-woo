@@ -348,8 +348,7 @@ class GokwikUtilities
         $currency = get_woocommerce_currency();
         $order->set_currency($currency);
 
-        $prices_include_tax = 'yes' === get_option('woocommerce_prices_include_tax');
-        $order->set_prices_include_tax($prices_include_tax);
+        $order->set_prices_include_tax(wc_prices_include_tax());
 
         $wc_session_data = maybe_unserialize($wc_session_data);
         $chosen_payment_method = maybe_unserialize($wc_session_data['chosen_payment_method']) ?? '';
