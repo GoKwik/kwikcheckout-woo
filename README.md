@@ -27,7 +27,8 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 ## Changelog
 
 ### Version 1.1.3
-- [Enhancement] Enhanched UTM data tracking.
+- [Feature] Synchronization of order status and AWB data with GoKwik.
+- [Enhancement] Enhanced UTM data tracking.
 
 ### Version 1.1.2
 - [Feature] Added the option to block COD for specific shipping methods.
