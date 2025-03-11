@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.2
+ * Version:               1.1.3
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -16,7 +16,7 @@
  * Requires PHP:          7.0
  * Requires Plugins:      woocommerce
  * WC requires at least:  4.3
- * WC tested up to:       9.6
+ * WC tested up to:       9.7
  * WP tested up to:       6.7
  *
  * @package               Gokwik_Checkout
@@ -30,7 +30,7 @@ if (!defined('WPINC')) {
 }
 
 // Define plugin version and configuration constants
-define('GOKWIKCHECKOUT_VERSION', '1.1.2');
+define('GOKWIKCHECKOUT_VERSION', '1.1.3');
 define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', false);
 define('GOKWIKCHECKOUT_DEVELOPMENT_MODE', false);
 
@@ -77,7 +77,6 @@ define('GOKWIKCHECKOUT_FRONTEND_SCRIPT_URL', (function() {
 
     return $script_urls[GOKWIKCHECKOUT_ENV] ?? $script_urls['PRODUCTION'];
 })());
-
 
 // Check if WooCommerce is installed and active.
 if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
@@ -251,9 +250,9 @@ class GokwikCheckout
  * Add Discount/Fees for Payment Gateways.
  */
 add_action('woocommerce_cart_calculate_fees', 'gc_add_gateway_fees_discounts', PHP_INT_MAX);
-function gc_add_gateway_fees_discounts($cart)
+function gc_add_gateway_fees_discounts()
 {
-    if (is_admin() || !class_exists('WC_Payment_Gateways')) {
+    if (is_admin() && !defined('DOING_AJAX')) {
         return;
     }
 
@@ -263,26 +262,27 @@ function gc_add_gateway_fees_discounts($cart)
     }
 
     $chosen_payment_method = WC()->session->get('chosen_payment_method');
+
+    $cart = WC()->cart;
+    $cart_contents_total = $cart->get_subtotal() ?? 0;
+    $shipping_total = $cart->get_shipping_total() ?? 0;
+    $tax_total = $cart->get_taxes_total() ?? 0;
+    $discount_total = $cart->get_discount_total() ?? 0;
+
+    $total = $cart_contents_total + $shipping_total + $tax_total - $discount_total;
+
     $feesAndDiscounts = [];
     $fee_label = null;
     $discount_label = null;
 
-    $subtotal = $cart->get_subtotal() ?? 0;
-    $shipping_total = $cart->get_shipping_total() ?? 0;
-
-    if (wc_prices_include_tax()) {
-        $subtotal += $cart->get_subtotal_tax() ?? 0;
-        $shipping_total += $cart->get_shipping_tax() ?? 0;
-    }
-
     switch ($chosen_payment_method) {
         case 'cod':
-            $feesAndDiscounts = GokwikUtilities::calculateCodExtraFeesAndDiscount($subtotal + $shipping_total);
+            $feesAndDiscounts = GokwikUtilities::calculateCodExtraFeesAndDiscount($total);
             $fee_label = 'COD Fee';
             $discount_label = 'COD Discount';
             break;
         case 'gokwik_prepaid':
-            $feesAndDiscounts = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount($subtotal + $shipping_total);
+            $feesAndDiscounts = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount($total);
             $fee_label = 'Prepaid Fee';
             $discount_label = 'Prepaid Discount';
             break;
@@ -322,7 +322,7 @@ function gc_hide_payment_method($gateways)
     $blocked_shipping_methods = get_option('wc_settings_gokwik_cod_blocked_shipping_methods', []);
     $chosen_shipping_methods = [];
 
-    if (WC()->session && WC()->session->has_session()) {
+    if (isset(WC()->session) && WC()->session->has_session()) {
         $chosen_shipping_methods = WC()->session->get('chosen_shipping_methods', []);
     }
 
@@ -641,6 +641,95 @@ function gc_add_to_cart()
     }
     do_action('woocommerce_ajax_added_to_cart', intval($_POST['add-to-cart']));
     WC_AJAX::get_refreshed_fragments();
+}
+
+// Schedule notification to GoKwik for changes in order status or AWB updates
+add_action('woocommerce_update_order', 'gc_schedule_order_update', 10, 1);
+function gc_schedule_order_update($order_id)
+{
+    if (!wp_next_scheduled('gc_delayed_order_update', [$order_id])) {
+        wp_schedule_single_event(time() + 5, 'gc_delayed_order_update', [$order_id]);
+    }
+}
+
+// Notify GoKwik of order or AWB updates.
+add_action('gc_delayed_order_update', 'gc_notify_order_update', 10, 1);
+function gc_notify_order_update($order_id)
+{
+    $order = wc_get_order($order_id);
+    if (!$order || $order->get_meta('is_gokwik_order') !== 'true') {
+        return;
+    }
+
+    $app_id = get_option('wc_settings_gokwik_section_app_id');
+    $app_secret = get_option('wc_settings_gokwik_section_app_secret');
+    if (empty($app_id) || empty($app_secret)) {
+        return;
+    }
+
+    $merchant_order_id = is_plugin_active('custom-order-numbers-for-woocommerce/custom-order-numbers-for-woocommerce.php') 
+        ? $order->get_meta('_alg_wc_full_custom_order_number') 
+        : $order_id;
+
+    $new_status = $order->get_status();
+    $mapped_status = GokwikUtilities::mapOrderStatus($new_status);
+    $order_status_data = $mapped_status ? [
+        'merchant_order_id' => (string) $merchant_order_id,
+        'order_status' => $mapped_status
+    ] : null;
+
+    $shipping_provider = '';
+    $awb_number = '';
+
+    foreach (['shipping_provider', '_aftership_tracking_provider_name', 'ywot_carrier_name'] as $key) {
+        $shipping_provider = $order->get_meta($key);
+        if ($shipping_provider) {
+            break;
+        }
+    }
+
+    foreach (['awb_number', '_aftership_tracking_number', 'ywot_tracking_code'] as $key) {
+        $awb_number = $order->get_meta($key);
+        if ($awb_number) {
+            break;
+        }
+    }
+
+    if (empty($shipping_provider) || empty($awb_number)) {
+        $tracking_items = $order->get_meta('_wc_shipment_tracking_items', true);
+        if (!empty($tracking_items) && is_array($tracking_items)) {
+            $last_item = end($tracking_items);
+            if (empty($shipping_provider) && !empty($last_item['tracking_provider'])) {
+                $shipping_provider = $last_item['tracking_provider'];
+            }
+            if (empty($awb_number) && !empty($last_item['tracking_number'])) {
+                $awb_number = $last_item['tracking_number'];
+            }
+        }
+    }
+
+    $awb_update_data = ($shipping_provider && $awb_number) ? [
+        'merchant_order_id' => (string) $merchant_order_id,
+        'shipping_provider' => $shipping_provider,
+        'awb_number' => $awb_number
+    ] : null;
+
+    $combined_data = array_merge(
+        $order_status_data ?: [],
+        $awb_update_data ?: []
+    );
+
+    if (!empty($combined_data)) {
+        $response = wp_remote_post(GOKWIKCHECKOUT_API_BASE_URL . 'v3/orders/update', [
+            'method' => 'POST',
+            'body' => wp_json_encode($combined_data),
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'gk-app-id' => $app_id,
+                'gk-app-secret' => $app_secret,
+            ],
+        ]);
+    }
 }
 
 // All good, let's initizalize.

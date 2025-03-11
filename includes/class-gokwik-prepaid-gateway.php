@@ -127,27 +127,15 @@ class GokwikPrepaidGateway extends \WC_Payment_Gateway
         }
 
         if (is_plugin_active('custom-order-numbers-for-woocommerce/custom-order-numbers-for-woocommerce.php')) {
-            $order_query = new \WC_Order_Query([
-                'meta_key'   => '_alg_wc_full_custom_order_number',
-                'meta_value' => $order_id,
-                'limit'      => 1,
-            ]);
-            $orders = $order_query->get_orders();
-            if ($orders) {
-                $order_id = reset($orders)->get_id();
-            }
+            $order_id = $order->get_meta('_alg_wc_full_custom_order_number');
         }
 
         $refund_data = [
             'merchant_order_id' => (string) $order_id,
-            'amount' => (float) $amount,
-            'tracking_id' => uniqid('refund_', true),
-            'metadata' => [
-                'refund_reason' => sanitize_text_field($reason),
-            ],
+            'refund_amount' => (float) $amount
         ];
 
-        $response = wp_remote_post(GOKWIKCHECKOUT_API_BASE_URL . 'v3/refunds', [
+        $response = wp_remote_post(GOKWIKCHECKOUT_API_BASE_URL . 'v3/orders/update', [
             'method' => 'POST',
             'body' => wp_json_encode($refund_data),
             'headers' => [
