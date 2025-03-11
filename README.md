@@ -21,10 +21,13 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 
 ## Compatibility
 
-- Tested up to WooCommerce version: 9.6
+- Tested up to WooCommerce version: 9.7
 - Tested up to WordPress version: 6.7
 
 ## Changelog
+
+### Version 1.1.3
+- [Enhancement] Enhanched UTM data tracking.
 
 ### Version 1.1.2
 - [Feature] Added the option to block COD for specific shipping methods.

@@ -56,6 +56,10 @@ jQuery(document).ready(function () {
             return;
         }
 
+        let referrer = getCookie("original_referrer") || getCookie("_orig_referrer");
+        let utmSource = getCookie("pys_utm_source") || getCookie("ad_source") || getCookie("utm_source");
+        let landingPage = getCookie("pys_landing_page") || getCookie("_landing_page");
+
         const gcObj = {
             environment: gc_data.environment,
             type: "merchantInfo",
@@ -64,6 +68,10 @@ jQuery(document).ready(function () {
                 merchantCheckoutId: sessionId
             }
         };
+
+        if (referrer) gcObj.origin_referrer = referrer;
+        if (utmSource) gcObj.ad_source = utmSource;
+        if (landingPage) gcObj.landing_page = landingPage;
 
         if (!gc_data.is_cart_empty) {
             gokwikSdk.initCheckout(gcObj);
@@ -181,6 +189,11 @@ jQuery(document).ready(function () {
                 }
             }
         }
+    }
+
+    function getCookie(name) {
+        let match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+        return match ? decodeURIComponent(match[2]) : "";
     }
 
     if (gc_data.is_checkout_page && !gc_data.is_order_received && !gc_data.is_cart_empty && gc_data.overwrite_native_checkout && !gc_data.is_international_user) {

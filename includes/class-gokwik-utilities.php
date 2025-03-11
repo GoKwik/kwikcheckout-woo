@@ -22,7 +22,7 @@ class GokwikUtilities
     public static function isHposEnabled()
     {
         return class_exists('Automattic\WooCommerce\Utilities\OrderUtil')
-        && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+            && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
     }
 
     /**
@@ -115,7 +115,7 @@ class GokwikUtilities
     /**
      * Calculate the extra fee or discount based on the given parameters.
      *
-     * @param float $cartSubtotal The cart subtotal.
+     * @param float $cartTotal The cart total.
      * @param string $valueOption The option name for the fee or discount value.
      * @param string $typeOption The option name for the fee or discount type.
      * @param string $minCartValueOption The option name for the minimum cart value.
@@ -123,7 +123,7 @@ class GokwikUtilities
      * @return float The calculated fee or discount.
      * @since 1.0.4
      */
-    public static function calculateValue($cartSubtotal, $valueOption, $typeOption, $minCartValueOption, $maxCartValueOption)
+    public static function calculateValue($cartTotal, $valueOption, $typeOption, $minCartValueOption, $maxCartValueOption)
     {
         $value = floatval(get_option($valueOption, 0));
         $type = get_option($typeOption, 'fixed');
@@ -132,8 +132,8 @@ class GokwikUtilities
         $minCartValue = ($minCartValue == '') ? 0 : floatval($minCartValue);
         $maxCartValue = ($maxCartValue == '') ? PHP_FLOAT_MAX : floatval($maxCartValue);
 
-        if ($cartSubtotal >= $minCartValue && $cartSubtotal <= $maxCartValue) {
-            return ($type === 'percentage') ? ($cartSubtotal * $value / 100) : $value;
+        if ($cartTotal >= $minCartValue && $cartTotal <= $maxCartValue) {
+            return ($type === 'percentage') ? ($cartTotal * $value / 100) : $value;
         }
 
         return 0.00;
@@ -145,7 +145,7 @@ class GokwikUtilities
      * @return array The calculated extra fees and discount.
      * @since 1.0.4
      */
-    public static function calculatePrepaidExtraFeesAndDiscount($cartSubtotal)
+    public static function calculatePrepaidExtraFeesAndDiscount($cartTotal)
     {
         $result = [
             'fee' => 0.00,
@@ -154,7 +154,7 @@ class GokwikUtilities
 
         if (get_option('wc_settings_gokwik_enable_prepaid_extra_fees', 'no') == 'yes') {
             $result['fee'] = self::calculateValue(
-                $cartSubtotal,
+                $cartTotal,
                 'wc_settings_gokwik_prepaid_extra_fees',
                 'wc_settings_gokwik_prepaid_extra_fees_type',
                 'wc_settings_gokwik_prepaid_min_cart_value_fees',
@@ -164,7 +164,7 @@ class GokwikUtilities
 
         if (get_option('wc_settings_gokwik_enable_prepaid_discount', 'no') == 'yes') {
             $result['discount'] = self::calculateValue(
-                $cartSubtotal,
+                $cartTotal,
                 'wc_settings_gokwik_prepaid_discount',
                 'wc_settings_gokwik_prepaid_discount_type',
                 'wc_settings_gokwik_prepaid_min_cart_value_discount',
@@ -188,7 +188,7 @@ class GokwikUtilities
      * @return array The calculated extra fees and discount.
      * @since 1.0.4
      */
-    public static function calculateCodExtraFeesAndDiscount($cartSubtotal)
+    public static function calculateCodExtraFeesAndDiscount($cartTotal)
     {
         $result = [
             'fee' => 0.00,
@@ -197,7 +197,7 @@ class GokwikUtilities
 
         if (get_option('wc_settings_gokwik_enable_cod_extra_fees', 'no') == 'yes') {
             $result['fee'] = self::calculateValue(
-                $cartSubtotal,
+                $cartTotal,
                 'wc_settings_gokwik_cod_extra_fees',
                 'wc_settings_gokwik_cod_extra_fees_type',
                 'wc_settings_gokwik_cod_min_cart_value_fees',
@@ -207,7 +207,7 @@ class GokwikUtilities
 
         if (get_option('wc_settings_gokwik_enable_cod_discount', 'no') == 'yes') {
             $result['discount'] = self::calculateValue(
-                $cartSubtotal,
+                $cartTotal,
                 'wc_settings_gokwik_cod_discount',
                 'wc_settings_gokwik_cod_discount_type',
                 'wc_settings_gokwik_cod_min_cart_value_discount',
@@ -475,19 +475,19 @@ class GokwikUtilities
     public static function getPpCodFormattedAmounts($order)
     {
         $is_ppcod = self::isHposEnabled()
-        ? $order->get_meta('is_ppcod', true)
-        : get_post_meta($order->get_id(), 'is_ppcod', true);
+            ? $order->get_meta('is_ppcod', true)
+            : get_post_meta($order->get_id(), 'is_ppcod', true);
 
         if (!$is_ppcod) {
             return ['is_ppcod' => false];
         }
 
         $advance_amount = self::isHposEnabled()
-        ? $order->get_meta('advance_paid', true)
-        : get_post_meta($order->get_id(), 'advance_paid', true);
+            ? $order->get_meta('advance_paid', true)
+            : get_post_meta($order->get_id(), 'advance_paid', true);
         $due_amount = self::isHposEnabled()
-        ? $order->get_meta('due_amount', true)
-        : get_post_meta($order->get_id(), 'due_amount', true);
+            ? $order->get_meta('due_amount', true)
+            : get_post_meta($order->get_id(), 'due_amount', true);
 
         $formatted_advance_amount = wc_price($advance_amount ?: 0.00, ['currency' => $order->get_currency()]);
         $formatted_due_amount = wc_price($due_amount ?: 0.00, ['currency' => $order->get_currency()]);
@@ -611,5 +611,24 @@ class GokwikUtilities
         } catch (Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * Map the given order status to a predefined status label.
+     *
+     * @param string $status The original order status.
+     * @return string|null The mapped status label or null if not found.
+     */
+    public static function mapOrderStatus($status) {
+        $status_map = [
+            'pending' => 'Pending',
+            'processing' => 'Confirmed',
+            'on-hold' => 'Pending',
+            'completed' => 'Confirmed',
+            'cancelled' => 'Cancelled',
+            'failed' => 'Failed',
+        ];
+
+        return $status_map[$status] ?? null;
     }
 }
