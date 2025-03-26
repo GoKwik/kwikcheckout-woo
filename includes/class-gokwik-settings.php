@@ -210,6 +210,14 @@ class GokwikSettings
                 'id' => 'wc_settings_gokwik_section_register_after_checkout',
                 'desc_tip' => 'Enable to auto-register guest users post-checkout.',
             ],
+            'gokwik_allow_pending_flow' => [
+                'name' => 'Allow Pending Flow',
+                'type' => 'checkbox',
+                'desc' => 'Creates a payment-pending order when the user drops off at address or payments screen.',
+                'default' => 'no',
+                'id' => 'wc_settings_gokwik_section_allow_pending_flow',
+                'desc_tip' => 'Enable to create orders in payment pending state.',
+            ],
             'section_end_general' => [
                 'type' => 'sectionend',
                 'id' => 'wc_settings_gokwik_section_end_general',

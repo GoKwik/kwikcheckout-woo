@@ -3,10 +3,10 @@
 namespace Gokwik_Checkout\Inc\Api;
 
 use Gokwik_Checkout\Inc\GokwikUtilities;
-use \WP_Error;
-use \WP_REST_Request;
-use \WP_REST_Response;
-use \WP_REST_Server;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
 
 // Exit if accessed directly.
 if (!defined('ABSPATH')) {
@@ -83,20 +83,77 @@ class GokwikCart
     public function registerRestEndpoints()
     {
         $routes = [
-            ['route' => '/' . $this->rest_base, 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'getCart'],
-            ['route' => '/' . $this->rest_base . '/get-coupons', 'methods' => WP_REST_Server::READABLE, 'callback' => 'getCoupons'],
-            ['route' => '/' . $this->rest_base . '/apply-coupon', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'applyCoupon'],
-            ['route' => '/' . $this->rest_base . '/remove-coupon', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'removeCoupon'],
-            ['route' => '/' . $this->rest_base . '/set-address', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'setAddress'],
-            ['route' => '/' . $this->rest_base . '/set-shipping-method', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'setShippingMethod'],
-            ['route' => '/' . $this->rest_base . '/set-payment-method', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'setPaymentMethod'],
-            ['route' => '/' . $this->rest_base . '/get-wallet-balance', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'getWalletBalance'],
-            ['route' => '/' . $this->rest_base . '/deduct-wallet-balance', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'deductWalletBalance'],
-            ['route' => '/' . $this->rest_base . '/place-order', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'placeOrder'],
-            ['route' => '/' . $this->rest_base . '/check-order-exists', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'checkOrderExists'],
-            ['route' => '/' . $this->rest_base . '/update-order-status', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'updateOrderStatus'],
-            ['route' => '/' . $this->rest_base . '/process-refund', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'refundProcess', 'permission_callback' => false],
-            ['route' => '/' . $this->rest_base . '/health-check', 'methods' => WP_REST_Server::CREATABLE, 'callback' => 'healthCheck'],
+            [
+                'route' => '/' . $this->rest_base,
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'getCart'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/get-coupons',
+                'methods' => WP_REST_Server::READABLE,
+                'callback' => 'getCoupons'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/apply-coupon',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'applyCoupon'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/remove-coupon',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'removeCoupon'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/set-address',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'setAddress'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/set-shipping-method',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'setShippingMethod'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/set-payment-method',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'setPaymentMethod'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/get-wallet-balance',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'getWalletBalance'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/deduct-wallet-balance',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'deductWalletBalance'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/place-order',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'placeOrder'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/check-order-exists',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'checkOrderExists'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/update-order-status',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'updateOrderStatus'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/process-refund',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'refundProcess',
+                'permission_callback' => false
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/health-check',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'healthCheck'
+            ],
         ];
 
         foreach ($routes as $route) {
@@ -107,7 +164,7 @@ class GokwikCart
                     [
                         'methods' => $route['methods'],
                         'callback' => [$this, $route['callback']],
-                        'permission_callback' => isset($route['permission_callback']) ? $route['permission_callback'] : [$this, 'validateRequest'],
+                        'permission_callback' => $route['permission_callback'] ?? [$this, 'validateRequest'],
                     ],
                 ]
             );
@@ -196,7 +253,7 @@ class GokwikCart
             include_once WC_ABSPATH . "includes/wc-template-hooks.php";
         }
 
-        if (null === WC()->session) {
+        if (WC()->session === null) {
             $session_class = apply_filters("woocommerce_session_handler", "WC_Session_Handler");
             WC()->session = new $session_class();
             WC()->session->init();
@@ -207,11 +264,11 @@ class GokwikCart
             $session->set($key, maybe_unserialize($value));
         }
 
-        if (null === WC()->customer) {
+        if (WC()->customer === null) {
             WC()->customer = new \WC_Customer(get_current_user_id(), true);
         }
 
-        if (null === WC()->cart) {
+        if (WC()->cart === null) {
             WC()->cart = new \WC_Cart();
         }
 
@@ -248,6 +305,56 @@ class GokwikCart
     public function getCart($request)
     {
         $session_key = $request->get_param('session_key');
+        $cartData = $this->getCartData($session_key, $request);
+
+        if (is_wp_error($cartData)) {
+            return $cartData;
+        }
+
+        $cartResponse = $cartData['cartResponse'];
+        $wc_session_data = $cartData['wc_session_data'];
+        $cartObj = $cartData['cartObj'];
+        $cart_customer = $cartData['cart_customer'];
+        $cart_payment_method = $cartData['cart_payment_method'];
+
+        $isPendingOrderFlowEnabled = defined('GOKWIKCHECKOUT_PENDING_ORDER_FLOW') && GOKWIKCHECKOUT_PENDING_ORDER_FLOW;
+        $hasValidPhone = !empty($cart_customer['phone']) && $cart_customer['phone'] !== '1234567890';
+        $hasValidPaymentMethod = in_array(
+            strtolower($cart_payment_method),
+            ['cod', 'gokwik_prepaid', 'wallet'],
+            true
+        );
+
+        if ($isPendingOrderFlowEnabled) {
+            if ($hasValidPhone || $hasValidPaymentMethod) {
+                $this->createOrUpdatePendingOrder($wc_session_data, $session_key);
+            }
+        } elseif ($hasValidPhone) {
+            GokwikUtilities::saveCartFlowsAbandonedCartData($wc_session_data, $session_key);
+        }
+
+        $userData = get_userdata($session_key);
+        if ($userData === false) {
+            $cartObj->empty_cart();
+            WC()->session->destroy_session();
+        } else {
+            WC()->cart->persistent_cart_update($userData->ID);
+        }
+
+        return new WP_REST_Response($cartResponse, 200);
+    }
+
+    /**
+     * Retrieve cart data for a given session key.
+     *
+     * @param string $session_key
+     * @param WP_REST_Request $request
+     *
+     * @return array|WP_Error
+     * @since 1.1.4
+     */
+    public function getCartData($session_key, $request)
+    {
         $cartSessionResponse = $this->loadCartSession($session_key);
         if (is_wp_error($cartSessionResponse)) {
             return $cartSessionResponse;
@@ -256,6 +363,16 @@ class GokwikCart
         [$wc_session_data, $cartObj] = $cartSessionResponse;
 
         $cart_customer = maybe_unserialize($wc_session_data['customer']) ?? [];
+
+        // Set a dummy address if shipping address is not set
+        if (empty($cart_customer['country']) || empty($cart_customer['state']) || empty($cart_customer['postcode'])) {
+            $cart_customer['country'] = 'IN';
+            $cart_customer['state'] = 'MH';
+            $cart_customer['postcode'] = '400001';
+            WC()->customer->set_shipping_country($cart_customer['country']);
+            WC()->customer->set_shipping_state($cart_customer['state']);
+            WC()->customer->set_shipping_postcode($cart_customer['postcode']);
+        }
 
         $cart_shipping_method = maybe_unserialize($wc_session_data['chosen_shipping_methods'] ?? []);
         if (!empty($cart_shipping_method)) {
@@ -287,14 +404,21 @@ class GokwikCart
             foreach ($cartObj->cart_contents as $item_value) {
                 $item = maybe_unserialize($item_value);
                 $cart_data_items[] = $item;
-                if (get_option('wc_settings_gokwik_section_mid', null) == "19r5f9vbcqsx" && !empty($item['wcpa_data'])) {
+                if (
+                    get_option('wc_settings_gokwik_section_mid', null) == "19r5f9vbcqsx" &&
+                    !empty($item['wcpa_data'])
+                ) {
                     foreach ($item['wcpa_data'] as $wcpa_section) {
                         if (empty($wcpa_section['fields'])) {
                             continue;
                         }
                         foreach ($wcpa_section['fields'] as $fields) {
                             foreach ($fields as $field) {
-                                if (isset($field['elementId']) && strpos($field['elementId'], 'wcpa-text-') !== false && !empty($field['value'])) {
+                                if (
+                                    isset($field['elementId']) &&
+                                    strpos($field['elementId'], 'wcpa-text-') !== false &&
+                                    !empty($field['value'])
+                                ) {
                                     $codBlock = true;
                                     break 3;
                                 }
@@ -335,9 +459,9 @@ class GokwikCart
             $session_data = WC()->session->get($shipping_session_key);
             $shipping_rates = $session_data['rates'] ?? $package['rates'];
 
-            $country = $cart_customer['country'] ?? 'IN';
-            $state = $cart_customer['state'] ?? '';
-            $postcode = $cart_customer['postcode'] ?? '';
+            $country = $cart_customer['country'];
+            $state = $cart_customer['state'];
+            $postcode = $cart_customer['postcode'];
 
             if (is_numeric($session_key) && $session_key !== 0) {
                 $user_data = get_userdata($session_key);
@@ -386,7 +510,10 @@ class GokwikCart
         if (!empty($cart_shipping_method) && !empty($blocked_shipping_methods)) {
             foreach ($cart_shipping_method as $method) {
                 foreach ($blocked_shipping_methods as $blocked_method) {
-                    if ($method == $blocked_method || strpos($blocked_method, $method . ':') === 0) {
+                    if (
+                        $method == $blocked_method ||
+                        strpos($blocked_method, $method . ':') === 0
+                    ) {
                         $codBlock = true;
                         break 2;
                     }
@@ -411,7 +538,10 @@ class GokwikCart
                 $coupon = new \WC_Coupon($coupon_code);
                 $discounts = new \WC_Discounts($cartObj);
                 $is_valid = $discounts->is_coupon_valid($coupon);
-                if (is_wp_error($is_valid) || ($customerEmail && !$this->checkCouponUsage($coupon, $customerEmail))) {
+                if (
+                    is_wp_error($is_valid) ||
+                    ($customerEmail && !$this->checkCouponUsage($coupon, $customerEmail))
+                ) {
                     $couponRemoved = $cartObj->remove_coupon($coupon_code);
                     if ($couponRemoved) {
                         $this->removeCouponFromSession($session_key, $coupon_code);
@@ -422,7 +552,11 @@ class GokwikCart
 
         $payment_methods = [];
         $available_gateways = WC()->payment_gateways->get_available_payment_gateways();
-        if (isset($available_gateways['cod']) && GokwikUtilities::isCodAvailable($cartObj) && !$codBlock) {
+        if (
+            isset($available_gateways['cod']) &&
+            GokwikUtilities::isCodAvailable($cartObj) &&
+            !$codBlock
+        ) {
             $payment_methods[] = [
                 "payment_method" => "cod",
                 "amount" => $cartObj->total,
@@ -469,27 +603,13 @@ class GokwikCart
             'totals' => $totals,
         ];
 
-        $isPendingOrderFlowEnabled = defined('GOKWIKCHECKOUT_PENDING_ORDER_FLOW') && GOKWIKCHECKOUT_PENDING_ORDER_FLOW;
-        $hasValidPhone = !empty($cart_customer['phone']) && $cart_customer['phone'] !== '1234567890';
-        $hasValidPaymentMethod = in_array(strtolower($cart_payment_method), ['cod', 'gokwik_prepaid', 'wallet'], true);
-
-        if ($isPendingOrderFlowEnabled) {
-            if ($hasValidPhone || $hasValidPaymentMethod) {
-                $this->createOrUpdatePendingOrder($wc_session_data, $session_key);
-            }
-        } elseif ($hasValidPhone) {
-            GokwikUtilities::saveCartFlowsAbandonedCartData($wc_session_data, $session_key);
-        }
-
-        $userData = get_userdata($session_key);
-        if ($userData === false) {
-            $cartObj->empty_cart();
-            WC()->session->destroy_session();
-        } else {
-            WC()->cart->persistent_cart_update($userData->ID);
-        }
-
-        return new WP_REST_Response($cartResponse, 200);
+        return [
+            'cartResponse' => $cartResponse,
+            'wc_session_data' => $wc_session_data,
+            'cartObj' => $cartObj,
+            'cart_customer' => $cart_customer,
+            'cart_payment_method' => $cart_payment_method
+        ];
     }
 
     /**
@@ -551,7 +671,10 @@ class GokwikCart
             if ($show_valid_only) {
                 $discounts = new \WC_Discounts($cartObj);
                 $is_valid = $discounts->is_coupon_valid($coupon);
-                if (is_wp_error($is_valid) || ($customerEmail && !$this->checkCouponUsage($coupon, $customerEmail))) {
+                if (
+                    is_wp_error($is_valid) ||
+                    ($customerEmail && !$this->checkCouponUsage($coupon, $customerEmail))
+                ) {
                     continue;
                 }
             }
@@ -640,7 +763,18 @@ class GokwikCart
             $this->updateSessionData($session_key, $wc_session_data);
         }
 
-        return new WP_REST_Response(['message' => 'Coupon was successfully added to cart.'], 200);
+        $cartData = $this->getCartData($session_key, $request);
+        if (is_wp_error($cartData)) {
+            return $cartData;
+        }
+
+        return new WP_REST_Response(
+            [
+                'message' => 'Coupon was successfully added to cart.',
+                'cart' => $cartData['cartResponse']
+            ],
+            200
+        );
     }
 
     /**
@@ -678,7 +812,18 @@ class GokwikCart
             }
         }
 
-        return new WP_REST_Response(['message' => 'Coupon was successfully removed from cart.'], 200);
+        $cartData = $this->getCartData($session_key, $request);
+        if (is_wp_error($cartData)) {
+            return $cartData;
+        }
+
+        return new WP_REST_Response(
+            [
+                'message' => 'Coupon was successfully removed from cart.',
+                'cart' => $cartData['cartResponse']
+            ],
+            200
+        );
     }
 
     /**
@@ -748,8 +893,19 @@ class GokwikCart
         $wc_session_data['customer'] = maybe_serialize($updated_customer_details);
         $this->updateSessionData($session_key, $wc_session_data);
 
+        $cartData = $this->getCartData($session_key, $request);
+        if (is_wp_error($cartData)) {
+            return $cartData;
+        }
+
         $message = $any_changes_requested ? "Address successfully updated." : "No changes requested.";
-        return new WP_REST_Response(['message' => $message], 200);
+        return new WP_REST_Response(
+            [
+                'message' => $message,
+                'cart' => $cartData['cartResponse']
+            ],
+            200
+        );
     }
 
     /**
@@ -776,7 +932,19 @@ class GokwikCart
             $wc_session_data['chosen_shipping_methods'] = maybe_serialize($shipping_method);
             $this->updateSessionData($session_key, $wc_session_data);
             WC()->session->set('chosen_shipping_methods', $shipping_method);
-            return new WP_REST_Response(['message' => "Shipping method successfully updated."], 200);
+
+            $cartData = $this->getCartData($session_key, $request);
+            if (is_wp_error($cartData)) {
+                return $cartData;
+            }
+
+            return new WP_REST_Response(
+                [
+                    'message' => "Shipping method successfully updated.",
+                    'cart' => $cartData['cartResponse']
+                ],
+                200
+            );
         }
 
         return new WP_REST_Response(['message' => "No changes requested."], 200);
@@ -813,7 +981,18 @@ class GokwikCart
         }
         $this->updateSessionData($session_key, $wc_session_data);
 
-        return new WP_REST_Response(['message' => $message], 200);
+        $cartData = $this->getCartData($session_key, $request);
+        if (is_wp_error($cartData)) {
+            return $cartData;
+        }
+
+        return new WP_REST_Response(
+            [
+                'message' => $message,
+                'cart' => $cartData['cartResponse']
+            ],
+            200
+        );
     }
 
     /**
@@ -1029,7 +1208,10 @@ class GokwikCart
         $cart_total = WC()->cart->get_total('edit');
         $fee_lines = wc_clean(wp_unslash($request->get_param('fee_lines')));
         foreach ($fee_lines as $fee) {
-            if ((($fee['name'] ?? null) === "Wallet Applied") || (($fee['discount_source'] ?? null) === "gkp")) {
+            if (
+                (($fee['name'] ?? null) === "Wallet Applied") ||
+                (($fee['discount_source'] ?? null) === "gkp")
+            ) {
                 $cart_total += (float) $fee['total'];
             }
         }
@@ -1155,7 +1337,11 @@ class GokwikCart
             }
         }
 
-        $utm_params_to_check = ["_wc_order_attribution_utm_campaign", "_wc_order_attribution_utm_source", "_wc_order_attribution_utm_medium"];
+        $utm_params_to_check = [
+            "_wc_order_attribution_utm_campaign",
+            "_wc_order_attribution_utm_source",
+            "_wc_order_attribution_utm_medium"
+        ];
         $billingGstNo = null;
         foreach ($meta_data as $meta_item) {
             $key = $meta_item['key'] ?? null;
@@ -1178,7 +1364,10 @@ class GokwikCart
         }
 
         $domainParts = explode('.', $_SERVER['HTTP_HOST']);
-        if (stripos($domainParts[0], 'skullcandy') !== false || (count($domainParts) > 2 && stripos($domainParts[1], 'skullcandy') !== false)) {
+        if (
+            stripos($domainParts[0], 'skullcandy') !== false ||
+            (count($domainParts) > 2 && stripos($domainParts[1], 'skullcandy') !== false)
+        ) {
             if ($billingGstNo) {
                 $billingMetaData['billing'][] = [
                     'type' => 'text',
@@ -1388,18 +1577,34 @@ class GokwikCart
     {
         global $wpdb;
 
-        $params = ['amount', 'merchantId', 'event', 'refundId', 'merchantReferenceId', 'transactionPaymentId', 'hmac'];
+        $params = [
+            'amount',
+            'merchantId',
+            'event',
+            'refundId',
+            'merchantReferenceId',
+            'transactionPaymentId',
+            'hmac'
+        ];
         $request_data = $request->get_json_params();
 
         $cleaned_params = array_map(function ($param) use ($request_data) {
-            return isset($request_data[$param]) 
-                ? wc_clean(wp_unslash($request_data[$param])) 
-                : (isset($request_data['data'][$param]) 
-                    ? wc_clean(wp_unslash($request_data['data'][$param])) 
+            return isset($request_data[$param])
+                ? wc_clean(wp_unslash($request_data[$param]))
+                : (isset($request_data['data'][$param])
+                    ? wc_clean(wp_unslash($request_data['data'][$param]))
                     : null);
         }, $params);
 
-        list($refund_amount, $merchantId, $event, $refundId, $merchantReferenceId, $transactionPaymentId, $hmac) = $cleaned_params;
+        list(
+            $refund_amount,
+            $merchantId,
+            $event,
+            $refundId,
+            $merchantReferenceId,
+            $transactionPaymentId,
+            $hmac
+        ) = $cleaned_params;
 
         if (empty($refund_amount) || empty($merchantId)) {
             return new WP_Error(
@@ -1483,8 +1688,8 @@ class GokwikCart
             if ($event == "refund.successful" && empty($custom_refund_id)) {
                 $refund->update_meta_data('_gokwik_refund_id', $refundId);
                 $refund->set_reason(
-                    $order->get_total() == ($total_refund + $refund->get_amount()) 
-                    ? "Full refund via GoKwik" 
+                    $order->get_total() == ($total_refund + $refund->get_amount())
+                    ? "Full refund via GoKwik"
                     : "Partial refund via GoKwik"
                 );
                 $refund->save();
@@ -1647,14 +1852,21 @@ class GokwikCart
             )
         );
         $restrictions = $coupon->get_email_restrictions();
-        if (is_array($restrictions) && count($restrictions) > 0 && !WC()->cart->is_coupon_emails_allowed($check_emails, $restrictions)) {
+        if (
+            is_array($restrictions) &&
+            count($restrictions) > 0 &&
+            !WC()->cart->is_coupon_emails_allowed($check_emails, $restrictions)
+        ) {
             return false;
         }
         $coupon_usage_limit = $coupon->get_usage_limit_per_user();
         if ($coupon_usage_limit > 0) {
             $coupon_data_store = $coupon->get_data_store();
             foreach ($check_emails as $email) {
-                if ($coupon_data_store && $coupon_data_store->get_usage_by_email($coupon, $email) >= $coupon_usage_limit) {
+                if (
+                    $coupon_data_store &&
+                    $coupon_data_store->get_usage_by_email($coupon, $email) >= $coupon_usage_limit
+                ) {
                     return false;
                 }
             }
@@ -1675,14 +1887,18 @@ class GokwikCart
      */
     protected function prepareCartItem($cart_item, $request)
     {
-        $product = ($cart_item["variation_id"] == 0) ? wc_get_product($cart_item["product_id"]) : wc_get_product($cart_item["variation_id"]);
+        $product = ($cart_item["variation_id"] == 0)
+            ? wc_get_product($cart_item["product_id"])
+            : wc_get_product($cart_item["variation_id"]);
 
         $cart_item['product_data'] = [
             'id' => $product->get_id(),
             'name' => $product->get_name(),
             'slug' => $product->get_slug(),
             'sku' => $product->get_sku(),
-            'price' => isset($cart_item['_bogof_free_item']) ? $cart_item['line_subtotal'] : $product->get_price(),
+            'price' => isset($cart_item['_bogof_free_item'])
+                ? $cart_item['line_subtotal']
+                : $product->get_price(),
             'regular_price' => $product->get_regular_price(),
             'sale_price' => $product->get_sale_price(),
         ];
@@ -1769,7 +1985,11 @@ class GokwikCart
         global $wpdb;
         $sessions_table = $wpdb->prefix . 'woocommerce_sessions';
         $serialized_session = maybe_serialize($wc_session_data);
-        $wpdb->update($sessions_table, ['session_value' => $serialized_session], ['session_key' => $session_key]);
+        $wpdb->update(
+            $sessions_table,
+            ['session_value' => $serialized_session],
+            ['session_key' => $session_key]
+        );
     }
 }
 

@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.3
+ * Version:               1.1.4
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -30,8 +30,8 @@ if (!defined('WPINC')) {
 }
 
 // Define plugin version and configuration constants
-define('GOKWIKCHECKOUT_VERSION', '1.1.3');
-define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', false);
+define('GOKWIKCHECKOUT_VERSION', '1.1.4');
+define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', get_option('wc_settings_gokwik_section_allow_pending_flow', 'no') === 'yes');
 define('GOKWIKCHECKOUT_DEVELOPMENT_MODE', false);
 
 // Define essential file path constants
@@ -112,6 +112,9 @@ add_action('before_woocommerce_init', function () {
 // Load utilities class.
 include_once GOKWIKCHECKOUT_DIR . '/includes/class-gokwik-utilities.php';
 use Gokwik_Checkout\Inc\GokwikUtilities;
+
+// Load PYS Event Handler class.
+include_once GOKWIKCHECKOUT_DIR . '/includes/class-gokwik-pys-event-handler.php';
 
 class GokwikCheckout
 {
@@ -732,7 +735,7 @@ function gc_notify_order_update($order_id)
     }
 }
 
-// All good, let's initizalize.
+// All good, let's initialize.
 add_action('plugins_loaded', 'init_gokwik_checkout_plugin');
 function init_gokwik_checkout_plugin()
 {

@@ -56,8 +56,8 @@ jQuery(document).ready(function () {
             return;
         }
 
-        let referrer = getCookie("original_referrer") || getCookie("_orig_referrer");
-        let utmSource = getCookie("pys_utm_source") || getCookie("ad_source") || getCookie("utm_source");
+        let referrer = getCookie("origin_referrer") || getCookie("_orig_referrer");
+        let utmSource = getCookie("ad_source");
         let landingPage = getCookie("pys_landing_page") || getCookie("_landing_page");
 
         const gcObj = {
