@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.4
+ * Version:               1.1.5
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -30,7 +30,7 @@ if (!defined('WPINC')) {
 }
 
 // Define plugin version and configuration constants
-define('GOKWIKCHECKOUT_VERSION', '1.1.4');
+define('GOKWIKCHECKOUT_VERSION', '1.1.5');
 define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', get_option('wc_settings_gokwik_section_allow_pending_flow', 'no') === 'yes');
 define('GOKWIKCHECKOUT_DEVELOPMENT_MODE', false);
 
@@ -249,68 +249,6 @@ class GokwikCheckout
 
 }
 
-/**
- * Add Discount/Fees for Payment Gateways.
- */
-add_action('woocommerce_cart_calculate_fees', 'gc_add_gateway_fees_discounts', PHP_INT_MAX);
-function gc_add_gateway_fees_discounts()
-{
-    if (is_admin() && !defined('DOING_AJAX')) {
-        return;
-    }
-
-    $payment_gateways = WC()->payment_gateways();
-    if (is_null($payment_gateways)) {
-        return;
-    }
-
-    $chosen_payment_method = WC()->session->get('chosen_payment_method');
-
-    $cart = WC()->cart;
-    $cart_contents_total = $cart->get_subtotal() ?? 0;
-    $shipping_total = $cart->get_shipping_total() ?? 0;
-    $tax_total = $cart->get_taxes_total() ?? 0;
-    $discount_total = $cart->get_discount_total() ?? 0;
-
-    $total = $cart_contents_total + $shipping_total + $tax_total - $discount_total;
-
-    $feesAndDiscounts = [];
-    $fee_label = null;
-    $discount_label = null;
-
-    switch ($chosen_payment_method) {
-        case 'cod':
-            $feesAndDiscounts = GokwikUtilities::calculateCodExtraFeesAndDiscount($total);
-            $fee_label = 'COD Fee';
-            $discount_label = 'COD Discount';
-            break;
-        case 'gokwik_prepaid':
-            $feesAndDiscounts = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount($total);
-            $fee_label = 'Prepaid Fee';
-            $discount_label = 'Prepaid Discount';
-            break;
-        default:
-            return;
-    }
-
-    $existing_fees = $cart->get_fees();
-    foreach ($existing_fees as $key => $fee) {
-        if (($fee->name == $fee_label && $feesAndDiscounts['fee'] <= 0) ||
-            ($fee->name == $discount_label && $feesAndDiscounts['discount'] <= 0)) {
-            unset($existing_fees[$key]);
-        }
-    }
-    $cart->fees_api()->set_fees($existing_fees);
-
-    if (!empty($feesAndDiscounts)) {
-        if ($feesAndDiscounts['fee'] > 0) {
-            $cart->add_fee($fee_label, $feesAndDiscounts['fee'], false, '');
-        }
-        if ($feesAndDiscounts['discount'] > 0) {
-            $cart->add_fee($discount_label, -$feesAndDiscounts['discount'], false, '');
-        }
-    }
-}
 
 /**
  * Hide GoKwik Prepaid payment method if GoKwik Checkout is not enabled.
@@ -322,28 +260,15 @@ function gc_hide_payment_method($gateways)
         return $gateways;
     }
 
-    $blocked_shipping_methods = get_option('wc_settings_gokwik_cod_blocked_shipping_methods', []);
-    $chosen_shipping_methods = [];
-
-    if (isset(WC()->session) && WC()->session->has_session()) {
-        $chosen_shipping_methods = WC()->session->get('chosen_shipping_methods', []);
-    }
-
-    if (isset($gateways['gokwik_prepaid']) && (!GOKWIKCHECKOUT_ENABLE_CHECKOUT === 'yes' || is_checkout() || is_wc_endpoint_url('order-pay'))) {
+    if (
+        isset($gateways['gokwik_prepaid']) && 
+        (
+            !GOKWIKCHECKOUT_ENABLE_CHECKOUT === 'yes' || 
+            is_checkout() || 
+            is_wc_endpoint_url('order-pay')
+        )
+    ) {
         unset($gateways['gokwik_prepaid']);
-    }
-
-    if (isset($gateways['cod'])) {
-        if (!GokwikUtilities::isCodAvailable(WC()->cart)) {
-            unset($gateways['cod']);
-        } else {
-            foreach ($chosen_shipping_methods as $method) {
-                if (in_array($method, $blocked_shipping_methods, true)) {
-                    unset($gateways['cod']);
-                    break;
-                }
-            }
-        }
     }
 
     return $gateways;
@@ -400,7 +325,8 @@ if (GOKWIKCHECKOUT_ENABLE_CHECKOUT == 'yes') {
     add_action('wp_ajax_nopriv_gc_fetch_user_session_id', 'gc_fetch_user_session_id');
 }
 function gc_fetch_user_session_id()
-{
+{   
+    global $wpdb;
     $response = [
         'status' => 'error',
         'session_id' => '',
@@ -419,6 +345,25 @@ function gc_fetch_user_session_id()
         }
     }
 
+    $headers = getallheaders();
+    $session_id = $response['session_id'] ?? "";
+    if (isset($headers['Cookie'])) {
+        $sessions_table = $wpdb->prefix . 'woocommerce_sessions';
+        $session_data = $wpdb->get_var($wpdb->prepare("SELECT session_value FROM $sessions_table WHERE session_key = %s", $session_id));
+        $cookies = explode("; ", $headers['Cookie']);
+        $decoded_cookies = [];
+        foreach ($cookies as $cookie) {
+            list($key, $value) = explode("=", $cookie, 2);
+            $decoded_cookies[$key] = urldecode($value);
+        }
+        if ($session_data) {
+            $session_data_unserialized = maybe_unserialize($session_data);
+            $session_data_unserialized['cookies'] = maybe_serialize($decoded_cookies);
+            $serialized_session = maybe_serialize($session_data_unserialized);
+            $wpdb->update($sessions_table, ['session_value' => $serialized_session], ['session_key' => $session_id]);
+        }
+    }
+    
     wp_send_json($response);
     exit;
 }
@@ -531,60 +476,14 @@ function gc_display_ppcod_data_order_table_tr($order_id)
     if ($ppcod_data['is_ppcod']) {
         ?>
         <tr>
-            <td class="label" style="color:#2f982f;"><?php echo esc_html('Advance Paid'); ?>:</td>
+            <td class="label"><?php echo esc_html('Advance Paid'); ?>:</td>
             <td width="1%"></td>
-            <td class="total" style="color:#2f982f;">
-                <?php echo $ppcod_data['formatted_advance_amount']; ?>
-            </td>
-        </tr>
-        <tr>
-            <td class="label" style="color:#f00;"><?php echo esc_html('Due Amount'); ?>:</td>
-            <td width="1%"></td>
-            <td class="total" style="color:#f00;">
-                <?php echo $ppcod_data['formatted_due_amount']; ?>
+            <td class="total">
+                <?php echo '-' . $ppcod_data['formatted_advance_amount']; ?>
             </td>
         </tr>
         <?php
 }
-}
-
-// Display PPCOD details in the WooCommerce admin order details page.
-add_action('woocommerce_admin_order_data_after_payment_info', 'gc_display_ppcod_data_order_details', 10, 1);
-function gc_display_ppcod_data_order_details($order)
-{
-    $ppcod_data = GokwikUtilities::getPpCodFormattedAmounts($order);
-
-    if ($ppcod_data['is_ppcod']) {
-        echo sprintf(
-            '<p style="padding: 0; margin: 0;">
-                <strong>Prepaid COD Order</strong> - Advance Paid:
-                <span style="color:#2f982f;">%s</span>, Due Amount:
-                <span style="color:#f00;">%s</span>
-            </p>',
-            $ppcod_data['formatted_advance_amount'],
-            $ppcod_data['formatted_due_amount']
-        );
-    }
-}
-
-// Display PPCOD details in Thank-you page.
-add_filter('woocommerce_get_order_item_totals', 'gc_display_ppcod_data_thank_you_page', 10, 2);
-function gc_display_ppcod_data_thank_you_page($total_rows, $order)
-{
-    $ppcod_data = GokwikUtilities::getPpCodFormattedAmounts($order);
-
-    if ($ppcod_data['is_ppcod']) {
-        $total_rows['paid_amt'] = [
-            'label' => 'Advance Paid:',
-            'value' => $ppcod_data['formatted_advance_amount'],
-        ];
-        $total_rows['balance_amt'] = [
-            'label' => 'Due Amount:',
-            'value' => $ppcod_data['formatted_due_amount'],
-        ];
-    }
-
-    return $total_rows;
 }
 
 // Add "Prepaid COD Order" tag to order name in WooCommerce admin.
