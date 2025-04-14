@@ -121,23 +121,24 @@ jQuery(document).ready(function () {
     }
 
     function setupMiniCartCheckoutButton(selector, sessionId) {
-        const gcButtonClass = jQuery(selector).attr("class") ?? '';
-        const gcButtonId = jQuery(selector).attr("id") ?? '';
-        const gcButton = jQuery('<a>', {
-            href: "#",
-            class: gcButtonClass,
-            id: gcButtonId,
-            text: 'Checkout'
-        });
-
-        jQuery(selector).replaceWith(gcButton);
-        gcButton.on('click', function (event) {
-            event.preventDefault();
-            gcButton.html('Loading...');
-            setTimeout(() => {
-                gcButton.html('Checkout');
-            }, 3000);
-            initGoKwikCheckout(sessionId);
+        jQuery(selector).each(function() {
+            const gcButtonClass = jQuery(this).attr("class") ?? '';
+            const gcButtonId = jQuery(this).attr("id") ?? '';
+            const gcButton = jQuery('<a>', {
+                href: "#",
+                class: gcButtonClass,
+                id: gcButtonId,
+                text: 'Checkout'
+            });
+            jQuery(this).replaceWith(gcButton);
+            gcButton.on('click', function (event) {
+                event.preventDefault();
+                gcButton.html('Loading...');
+                setTimeout(() => {
+                    gcButton.html('Checkout');
+                }, 3000);
+                initGoKwikCheckout(sessionId);
+            });
         });
     }
 

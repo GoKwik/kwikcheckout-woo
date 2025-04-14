@@ -1,11 +1,4 @@
 jQuery(document).ready(function () {
-    function updateCodLabels() {
-        var codEnableDisable = jQuery("#wc_settings_gokwik_cod_enable_disable").val();
-        var actionText = codEnableDisable === "enable" ? "Enable" : "Disable";
-        jQuery("#wc_settings_gokwik_cod_products").closest("tr").find("label").text(actionText + " COD for Selected Products");
-        jQuery("#wc_settings_gokwik_cod_categories").closest("tr").find("label").text(actionText + " COD for Selected Categories");
-    }
-
     function toggleSettings(settingId, rows) {
         var isEnabled = jQuery(settingId).is(":checked");
         rows.forEach(function (row) {
@@ -25,43 +18,6 @@ jQuery(document).ready(function () {
         ]);
     }
 
-    function toggleCodExtraFeesSettings() {
-        toggleSettings("#wc_settings_gokwik_enable_cod_extra_fees", [
-            "#wc_settings_gokwik_cod_extra_fees",
-            "#wc_settings_gokwik_cod_extra_fees_type",
-            "#wc_settings_gokwik_cod_min_cart_value_fees",
-            "#wc_settings_gokwik_cod_max_cart_value_fees"
-        ]);
-    }
-
-    function toggleCodDiscountSettings() {
-        toggleSettings("#wc_settings_gokwik_enable_cod_discount", [
-            "#wc_settings_gokwik_cod_discount",
-            "#wc_settings_gokwik_cod_discount_type",
-            "#wc_settings_gokwik_cod_min_cart_value_discount",
-            "#wc_settings_gokwik_cod_max_cart_value_discount"
-        ]);
-    }
-
-    function togglePrepaidExtraFeesSettings() {
-        toggleSettings("#wc_settings_gokwik_enable_prepaid_extra_fees", [
-            "#wc_settings_gokwik_prepaid_extra_fees",
-            "#wc_settings_gokwik_prepaid_extra_fees_type",
-            "#wc_settings_gokwik_prepaid_min_cart_value_fees",
-            "#wc_settings_gokwik_prepaid_max_cart_value_fees"
-        ]);
-    }
-
-    function togglePrepaidDiscountSettings() {
-        toggleSettings("#wc_settings_gokwik_enable_prepaid_discount", [
-            "#wc_settings_gokwik_prepaid_discount",
-            "#wc_settings_gokwik_prepaid_discount_type",
-            "#wc_settings_gokwik_prepaid_min_cart_value_discount",
-            "#wc_settings_gokwik_prepaid_max_cart_value_discount"
-        ]);
-        jQuery("#wc_settings_gokwik_prepaid_discount_type").trigger("change");
-    }
-
     function toggleCheckoutSettings() {
         toggleSettings("#wc_settings_gokwik_section_enable_checkout", [
             "#wc_settings_gokwik_section_enable_checkout_from_cart_page",
@@ -71,64 +27,6 @@ jQuery(document).ready(function () {
             "#wc_settings_gokwik_section_enable_buy_now_button"
         ]);
     }
-
-    jQuery("#wc_settings_gokwik_prepaid_discount_type").on("change", function () {
-        var prepaidDiscountType = jQuery(this).val();
-        var isPrepaidDiscountEnabled = jQuery("#wc_settings_gokwik_enable_prepaid_discount").is(":checked");
-        if (prepaidDiscountType === "percentage" && isPrepaidDiscountEnabled) {
-            jQuery("#wc_settings_gokwik_prepaid_max_discount").closest("tr").fadeIn("fast");
-        } else {
-            jQuery("#wc_settings_gokwik_prepaid_max_discount").closest("tr").fadeOut("fast");
-        }
-    }).trigger("change");
-
-    jQuery("#wc_settings_gokwik_cod_products").select2({
-        multiple: true,
-        ajax: {
-            url: gokwikAdmin.ajaxurl,
-            dataType: "json",
-            delay: 300,
-            data: function (params) {
-                return {
-                    action: "search_products",
-                    q: params.term,
-                    security: gokwikAdmin.product_nonce
-                };
-            },
-            processResults: function (data) {
-                if (data.success) {
-                    return {
-                        results: data.data
-                    };
-                } else {
-                    return {
-                        results: []
-                    };
-                }
-            },
-            transport: function (params, success, failure) {
-                var request = jQuery.ajax(params);
-                request.then(success);
-                request.fail(function (jqXHR, textStatus) {
-                    if (textStatus !== 'abort') {
-                        failure();
-                    }
-                });
-                return request;
-            },
-            cache: true
-        },
-        minimumInputLength: 3,
-        templateResult: function (data) {
-            if (data.loading) {
-                return data.text;
-            }
-            return jQuery("<span>" + data.text + "</span>");
-        },
-        templateSelection: function (data) {
-            return data.text;
-        }
-    });
 
     jQuery("#wc_settings_gokwik_selected_coupons").select2({
         multiple: true,
@@ -187,22 +85,8 @@ jQuery(document).ready(function () {
         });
     }
 
-    var selectedProducts = gokwikAdmin.selectedProducts || [];
-    if (selectedProducts.length > 0) {
-        var $select = jQuery("#wc_settings_gokwik_cod_products");
-        selectedProducts.forEach(function (product) {
-            var option = new Option(product.text, product.id, true, true);
-            $select.append(option).trigger("change");
-        });
-    }
-
     const settingsActions = [
-        { selector: "#wc_settings_gokwik_cod_enable_disable", action: updateCodLabels },
         { selector: "#wc_settings_gokwik_section_show_coupons_list", action: toggleCouponSettings },
-        { selector: "#wc_settings_gokwik_enable_cod_extra_fees", action: toggleCodExtraFeesSettings },
-        { selector: "#wc_settings_gokwik_enable_cod_discount", action: toggleCodDiscountSettings },
-        { selector: "#wc_settings_gokwik_enable_prepaid_extra_fees", action: togglePrepaidExtraFeesSettings },
-        { selector: "#wc_settings_gokwik_enable_prepaid_discount", action: togglePrepaidDiscountSettings },
         { selector: "#wc_settings_gokwik_section_enable_checkout", action: toggleCheckoutSettings }
     ];
 

@@ -26,6 +26,11 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 
 ## Changelog
 
+### Version 1.1.5
+- [Feature] Added support for KwikFlows.
+- [Feature] Added an inventory check.
+- [Enhancement] Improved UTM tracking.
+
 ### Version 1.1.4
 - [Feature] Improved the tracking of purchase events for increased accuracy.
 - [Enhancement] Various optimizations for enhanced speed and performance.

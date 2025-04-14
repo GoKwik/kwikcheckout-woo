@@ -114,11 +114,6 @@ class GokwikCart
                 'callback' => 'setShippingMethod'
             ],
             [
-                'route' => '/' . $this->rest_base . '/set-payment-method',
-                'methods' => WP_REST_Server::CREATABLE,
-                'callback' => 'setPaymentMethod'
-            ],
-            [
                 'route' => '/' . $this->rest_base . '/get-wallet-balance',
                 'methods' => WP_REST_Server::CREATABLE,
                 'callback' => 'getWalletBalance'
@@ -153,6 +148,11 @@ class GokwikCart
                 'route' => '/' . $this->rest_base . '/health-check',
                 'methods' => WP_REST_Server::CREATABLE,
                 'callback' => 'healthCheck'
+            ],
+            [
+                'route' => '/' . $this->rest_base . '/remove-out-of-stock-items',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'removeOutOfStockItems'
             ],
         ];
 
@@ -363,8 +363,6 @@ class GokwikCart
         [$wc_session_data, $cartObj] = $cartSessionResponse;
 
         $cart_customer = maybe_unserialize($wc_session_data['customer']) ?? [];
-
-        // Set a dummy address if shipping address is not set
         if (empty($cart_customer['country']) || empty($cart_customer['state']) || empty($cart_customer['postcode'])) {
             $cart_customer['country'] = 'IN';
             $cart_customer['state'] = 'MH';
@@ -398,37 +396,7 @@ class GokwikCart
             }
         }
 
-        $cart_data_items = [];
-        $codBlock = false;
-        if (!empty($cartObj->cart_contents)) {
-            foreach ($cartObj->cart_contents as $item_value) {
-                $item = maybe_unserialize($item_value);
-                $cart_data_items[] = $item;
-                if (
-                    get_option('wc_settings_gokwik_section_mid', null) == "19r5f9vbcqsx" &&
-                    !empty($item['wcpa_data'])
-                ) {
-                    foreach ($item['wcpa_data'] as $wcpa_section) {
-                        if (empty($wcpa_section['fields'])) {
-                            continue;
-                        }
-                        foreach ($wcpa_section['fields'] as $fields) {
-                            foreach ($fields as $field) {
-                                if (
-                                    isset($field['elementId']) &&
-                                    strpos($field['elementId'], 'wcpa-text-') !== false &&
-                                    !empty($field['value'])
-                                ) {
-                                    $codBlock = true;
-                                    break 3;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
+        $cart_data_items = array_map('maybe_unserialize', $cartObj->cart_contents ?? []);
         if (empty($cart_data_items)) {
             return new WP_Error(
                 'gc_cart_has_no_items',
@@ -506,31 +474,6 @@ class GokwikCart
             }
         }
 
-        $blocked_shipping_methods = get_option('wc_settings_gokwik_cod_blocked_shipping_methods', []);
-        if (!empty($cart_shipping_method) && !empty($blocked_shipping_methods)) {
-            foreach ($cart_shipping_method as $method) {
-                foreach ($blocked_shipping_methods as $blocked_method) {
-                    if (
-                        $method == $blocked_method ||
-                        strpos($blocked_method, $method . ':') === 0
-                    ) {
-                        $codBlock = true;
-                        break 2;
-                    }
-                }
-            }
-        }
-
-        $total = WC()->cart->get_total('edit') ?? 0;
-
-        $prepaidFeesAndDiscount = GokwikUtilities::calculatePrepaidExtraFeesAndDiscount($total);
-        $finalPrepaidCharge = $prepaidFeesAndDiscount['fee'];
-        $finalPrepaidDiscount = $prepaidFeesAndDiscount['discount'];
-
-        $codFeesAndDiscount = GokwikUtilities::calculateCodExtraFeesAndDiscount($total);
-        $finalCodCharge = $codFeesAndDiscount['fee'];
-        $finalCodDiscount = $codFeesAndDiscount['discount'];
-
         $customerEmail = maybe_unserialize($wc_session_data)['customer_email'] ?? null;
         if (!empty($cart_applied_coupon)) {
             foreach ($cart_applied_coupon as $coupon_code) {
@@ -549,27 +492,6 @@ class GokwikCart
                 }
             }
         }
-
-        $payment_methods = [];
-        $available_gateways = WC()->payment_gateways->get_available_payment_gateways();
-        if (
-            isset($available_gateways['cod']) &&
-            GokwikUtilities::isCodAvailable($cartObj) &&
-            !$codBlock
-        ) {
-            $payment_methods[] = [
-                "payment_method" => "cod",
-                "amount" => $cartObj->total,
-                "charge" => $finalCodCharge,
-                "discount" => $finalCodDiscount,
-            ];
-        }
-        $payment_methods[] = [
-            "payment_method" => "gokwik_prepaid",
-            "amount" => $cartObj->total,
-            "charge" => $finalPrepaidCharge,
-            "discount" => $finalPrepaidDiscount,
-        ];
 
         $totals = $cartObj->get_totals();
         if (wc_prices_include_tax()) {
@@ -599,8 +521,8 @@ class GokwikCart
             'chosen_shipping_method' => $cart_shipping_method,
             'chosen_payment_method' => $cart_payment_method,
             'shipping_methods' => $shipping_methods,
-            'payment_methods' => $payment_methods,
             'totals' => $totals,
+            'plugin_version' => GOKWIKCHECKOUT_VERSION,
         ];
 
         return [
@@ -951,51 +873,6 @@ class GokwikCart
     }
 
     /**
-     * Set payment method.
-     *
-     * @param WP_REST_Request $request
-     *
-     * @return WP_REST_Response|WP_Error
-     * @since 1.0.0
-     */
-    public function setPaymentMethod($request)
-    {
-        $session_key = $request->get_param('session_key');
-        $cartSessionResponse = $this->loadCartSession($session_key);
-        if (is_wp_error($cartSessionResponse)) {
-            return $cartSessionResponse;
-        }
-
-        [$wc_session_data, $cartObj] = $cartSessionResponse;
-
-        $payment_method = $request->get_param('payment_method');
-        if (!empty($payment_method)) {
-            $cleaned_payment_method = wc_clean(wp_unslash($payment_method));
-            $wc_session_data['chosen_payment_method'] = maybe_serialize($cleaned_payment_method);
-            WC()->session->set('chosen_payment_method', $cleaned_payment_method);
-            $message = "Payment method successfully set.";
-        } else {
-            $wc_session_data['chosen_payment_method'] = maybe_serialize('');
-            WC()->session->set('chosen_payment_method', '');
-            $message = "Payment method successfully reset.";
-        }
-        $this->updateSessionData($session_key, $wc_session_data);
-
-        $cartData = $this->getCartData($session_key, $request);
-        if (is_wp_error($cartData)) {
-            return $cartData;
-        }
-
-        return new WP_REST_Response(
-            [
-                'message' => $message,
-                'cart' => $cartData['cartResponse']
-            ],
-            200
-        );
-    }
-
-    /**
      * Return customer's terawallet balance.
      *
      * @param WP_REST_Request $request
@@ -1138,7 +1015,9 @@ class GokwikCart
      * @since 1.0.2
      */
     public function placeOrder($request)
-    {
+    {   
+        global $wpdb;
+
         $session_key = $request->get_param('session_key');
         $cartSessionResponse = $this->loadCartSession($session_key);
         if (is_wp_error($cartSessionResponse)) {
@@ -1208,12 +1087,7 @@ class GokwikCart
         $cart_total = WC()->cart->get_total('edit');
         $fee_lines = wc_clean(wp_unslash($request->get_param('fee_lines')));
         foreach ($fee_lines as $fee) {
-            if (
-                (($fee['name'] ?? null) === "Wallet Applied") ||
-                (($fee['discount_source'] ?? null) === "gkp")
-            ) {
-                $cart_total += (float) $fee['total'];
-            }
+            $cart_total += (float) $fee['total'];
         }
 
         $order_total = (float) wc_clean(wp_unslash($request->get_param('order_total'))) ?? 0;
@@ -1337,12 +1211,102 @@ class GokwikCart
             }
         }
 
-        $utm_params_to_check = [
-            "_wc_order_attribution_utm_campaign",
-            "_wc_order_attribution_utm_source",
-            "_wc_order_attribution_utm_medium"
-        ];
         $billingGstNo = null;
+        $pys_data = array();
+        $source_type = "typein";
+        $cookie_data = $wc_session_data['cookies'] ? maybe_unserialize($wc_session_data['cookies']) : array();
+        $referrer = $cookie_data['origin_referrer'] ? $cookie_data['origin_referrer'] : "";
+        $ad_source = $cookie_data['ad_source'] ?? "";
+        if ($ad_source != "") {
+            if (strpos($ad_source, '?') === 0) {
+                $ad_source = substr($ad_source, 1);
+            }
+            $cookie_utm_params = explode("&", $ad_source);
+            foreach ($cookie_utm_params as $utm_data) {
+                $utm_params = explode("=", $utm_data);
+                $utm_key = $utm_params[0] ?? "";
+                $utm_value = $utm_params[1] ?? "";
+                if ($utm_key != "" && $utm_value != "") {
+                    $pys_data[$utm_key] = $utm_value;
+                    switch ($utm_key) {
+                        case 'utm_source':
+                            $meta_data[] = array(
+                                'key' => "_wc_order_attribution_utm_source",
+                                'value' => $utm_value
+                            );
+                            break;
+                        case 'utm_medium':
+                            $meta_data[] = array(
+                                'key' => "_wc_order_attribution_utm_medium",
+                                'value' => $utm_value
+                            );
+                            break;
+                        case 'utm_campaign':
+                            $meta_data[] = array(
+                                'key' => "_wc_order_attribution_utm_campaign",
+                                'value' => $utm_value
+                            );
+                            break;
+                        case 'utm_term':
+                            $meta_data[] = array(
+                                'key' => "_wc_order_attribution_utm_term",
+                                'value' => $utm_value
+                            );
+                            break;
+                        case 'utm_content':
+                            $meta_data[] = array(
+                                'key' => "_wc_order_attribution_utm_content",
+                                'value' => $utm_value
+                            );
+                            break;
+                    }
+                }
+            }
+        } else {
+            if (isset($cookie_data['pys_utm_source'])) {
+                $meta_data[] = array(
+                    'key' => "_wc_order_attribution_utm_source",
+                    'value' => $cookie_data['pys_utm_source']
+                );
+            }
+            if (isset($cookie_data['pys_utm_medium'])) {
+                $meta_data[] = array(
+                    'key' => "_wc_order_attribution_utm_medium",
+                    'value' => $cookie_data['pys_utm_medium']
+                );
+            }
+            if (isset($cookie_data['pys_utm_campaign'])) {
+                $meta_data[] = array(
+                    'key' => "_wc_order_attribution_utm_campaign",
+                    'value' => $cookie_data['pys_utm_campaign']
+                );
+            }
+            if (isset($cookie_data['pys_utm_term'])) {
+                $meta_data[] = array(
+                    'key' => "_wc_order_attribution_utm_term",
+                    'value' => $cookie_data['pys_utm_term']
+                );
+            }
+            if (isset($cookie_data['pys_utm_content'])) {
+                $meta_data[] = array(
+                    'key' => "_wc_order_attribution_utm_content",
+                    'value' => $cookie_data['pys_utm_content']
+                );
+            }
+        }
+        if ($referrer != "") {
+            $keysToRemove = [
+                "_wc_order_attribution_utm_source",
+                "_wc_order_attribution_utm_medium",
+                "_wc_order_attribution_utm_campaign",
+                "_wc_order_attribution_utm_term",
+                "_wc_order_attribution_utm_content"
+            ];
+            $meta_data = array_values(array_filter($meta_data, function ($item) use ($keysToRemove) {
+                return !in_array($item["key"], $keysToRemove);
+            }));
+        }
+
         foreach ($meta_data as $meta_item) {
             $key = $meta_item['key'] ?? null;
             $value = $meta_item['value'] ?? null;
@@ -1356,11 +1320,102 @@ class GokwikCart
                 } else {
                     update_post_meta($order->get_id(), $key, $value);
                 }
+                if ($key == 'advance_paid') {
+                    $fee_lines[] = [
+                        'name' => 'Advance Paid',
+                        'total' => -abs(floatval($value)),
+                    ];
+                }
             }
 
-            if (in_array($key, $utm_params_to_check, true)) {
-                $order->update_meta_data('_wc_order_attribution_source_type', "utm");
+            switch ($key) {
+                case '_wc_order_attribution_utm_source':
+                    if (!isset($pys_data["utm_source"])) {
+                        $pys_data["utm_source"] = $value;
+                    }
+                    break;
+                case '_wc_order_attribution_utm_medium':
+                    if (!isset($pys_data["utm_medium"])) {
+                        $pys_data["utm_medium"] = $value;
+                    }
+                    break;
+                case '_wc_order_attribution_utm_campaign':
+                    if (!isset($pys_data["utm_campaign"])) {
+                        $pys_data["utm_campaign"] = $value;
+                    }
+                    break;
+                case '_wc_order_attribution_utm_term':
+                    if (!isset($pys_data["utm_term"])) {
+                        $pys_data["utm_term"] = $value;
+                    }
+                    break;
+                case '_wc_order_attribution_utm_content':
+                    if (!isset($pys_data["utm_content"])) {
+                        $pys_data["utm_content"] = $value;
+                    }
+                    break;
             }
+        }
+        if (count($pys_data) > 0) {
+            $source_type = "utm";
+        }
+        $is_search_engine = false;
+        if ($source_type != "utm" && $referrer != "") {
+            $search_engines = ['google', 'bing', 'yahoo', 'duckduckgo', 'baidu', 'yandex'];
+            foreach ($search_engines as $engine) {
+                if (stripos($referrer, $engine) !== false) {
+                    $is_search_engine = true;
+                    break;
+                }
+            }
+            if ($is_search_engine) {
+                $source_type = "organic";
+            } else {
+                $source_type = "referral";
+            }
+            $order->update_meta_data('_wc_order_attribution_utm_source', $referrer);
+        }
+        $order->update_meta_data('_wc_order_attribution_source_type', $source_type);
+        
+        if (class_exists('PixelYourSite\PYS')) {
+            $pys_enrich_data = $order->get_meta('pys_enrich_data');
+            $pys_utm = isset($pys_enrich_data['pys_utm']) ? explode("|", $pys_enrich_data['pys_utm']) : [];
+            $pys_utm_updated = array();
+            $last_pys_utm_updated = array();
+            $utm_source = $pys_data["utm_source"] ?? $cookie_data['pys_utm_source'] ?? "undefined";
+            $utm_medium = $pys_data["utm_medium"] ?? $cookie_data['pys_utm_medium'] ?? "undefined";
+            $utm_campaign = $pys_data["utm_campaign"] ?? $cookie_data['pys_utm_campaign'] ?? "undefined";
+            $utm_term = $pys_data["utm_term"] ?? $cookie_data['pys_utm_term'] ?? "undefined";
+            $utm_content = $pys_data["utm_content"] ?? $cookie_data['pys_utm_content'] ?? "undefined";
+            $pys_landing_page = $cookie_data["pys_landing_page"] ?? "";
+            $pysTrafficSource = $cookie_data["pysTrafficSource"] ?? "";
+            $last_pys_landing_page = $cookie_data["last_pys_landing_page"] ?? "";
+            $last_pysTrafficSource = $cookie_data["last_pysTrafficSource"] ?? "";
+            $utm_mapping = [
+                "utm_source" => $utm_source,
+                "utm_medium" => $utm_medium,
+                "utm_campaign" => $utm_campaign,
+                "utm_term" => $utm_term,
+                "utm_content" => $utm_content,
+            ];
+            foreach ($pys_utm as $pys_utm_data) {
+                $psy_utm_data_ex = explode(":", $pys_utm_data);
+                $utm_key = $psy_utm_data_ex[0];
+                if (isset($utm_mapping[$utm_key])) {
+                    $updated_value = $utm_key . ":" . $utm_mapping[$utm_key];
+                    $pys_utm_updated[] = $updated_value;
+                    $last_pys_utm_updated[] = $updated_value;
+                }
+            }
+
+            $pys_enrich_data['pys_utm'] = implode("|", $pys_utm_updated);
+            $pys_enrich_data['last_pys_utm'] = implode("|", $last_pys_utm_updated);
+            $pys_enrich_data['pys_landing'] = $pys_landing_page;
+            $pys_enrich_data['pys_source'] = $pysTrafficSource;
+            $pys_enrich_data['last_pys_landing'] = $last_pys_landing_page;
+            $pys_enrich_data['last_pys_source'] = $last_pysTrafficSource;
+
+            $order->update_meta_data('pys_enrich_data', $pys_enrich_data);
         }
 
         $domainParts = explode('.', $_SERVER['HTTP_HOST']);
@@ -1406,41 +1461,38 @@ class GokwikCart
             $order->update_status($status);
         }
 
-        $walletFeeApplied = false;
-        $prepaidDiscountApplied = false;
-
-        foreach ($fee_lines as $key => $fee) {
-            if ((($fee['name'] ?? null) === "Wallet Applied") && !empty($fee['total'] ?? null)) {
-                $walletFee = new \WC_Order_Item_Fee();
-                $walletFee->set_name($fee['name']);
-                $feeTotal = (float) $fee['total'];
-                $walletFee->set_total($feeTotal < 0 ? $feeTotal : -1 * $feeTotal);
-                $walletFee->set_amount($feeTotal < 0 ? $feeTotal : -1 * $feeTotal);
-                $walletFee->set_total_tax(0);
-                $walletFee->set_tax_class(false);
-                $walletFee->set_tax_status('none');
-                $walletFee->set_taxes(false);
-                $walletFee->save();
-                $order->add_item($walletFee);
-                $walletFeeApplied = true;
-            } elseif ((($fee['discount_source'] ?? null) === "gkp") && !empty($fee['total'] ?? null)) {
-                $prepaidDiscount = new \WC_Order_Item_Fee();
-                $prepaidDiscount->set_name($fee['name'] ?? 'Prepaid Discount');
-                $feeTotal = (float) $fee['total'];
-                $prepaidDiscount->set_total($feeTotal < 0 ? $feeTotal : -1 * $feeTotal);
-                $prepaidDiscount->set_amount($feeTotal < 0 ? $feeTotal : -1 * $feeTotal);
-                $prepaidDiscount->set_total_tax(0);
-                $prepaidDiscount->set_tax_class(false);
-                $prepaidDiscount->set_tax_status('none');
-                $prepaidDiscount->set_taxes(false);
-                $prepaidDiscount->save();
-                $order->add_item($prepaidDiscount);
-                $prepaidDiscountApplied = true;
+        foreach ($fee_lines as $fee) {
+            $feeName = $fee['name'] ?? null;
+            $feeTotal = (float) ($fee['total'] ?? 0);
+            if (empty($feeName) || $feeTotal === 0) {
+                continue;
             }
+            $orderItemFee = new \WC_Order_Item_Fee();
+            $orderItemFee->set_name($feeName);
+            $orderItemFee->set_total($feeTotal);
+            $orderItemFee->set_amount($feeTotal);
+            $orderItemFee->set_total_tax(0);
+            $orderItemFee->set_tax_class(false);
+            $orderItemFee->set_tax_status('none');
+            $orderItemFee->set_taxes(false);
+            $orderItemFee->save();
+            $order->add_item($orderItemFee);
         }
 
         $order->calculate_totals(false);
         $order->save();
+
+        WC()->cart->empty_cart(true);
+        $wpdb->delete("{$wpdb->prefix}woocommerce_sessions", ['session_key' => $session_key]);
+
+        if (is_user_logged_in()) {
+            delete_user_meta(
+                get_current_user_id(),
+                '_woocommerce_persistent_cart_' . get_current_blog_id()
+            );
+        }
+
+        WC()->session->destroy_session();
 
         $orderId = $order->get_id();
         if (is_plugin_active('custom-order-numbers-for-woocommerce/custom-order-numbers-for-woocommerce.php')) {
@@ -1903,6 +1955,11 @@ class GokwikCart
             'sale_price' => $product->get_sale_price(),
         ];
 
+        if ($product->managing_stock()) {
+            $cart_item['product_data']['salable_qty'] = $product->get_stock_quantity();
+            $cart_item['product_data']['stock_status'] = in_array($product->get_stock_status(), ['instock', 'onbackorder']) ? "IN_STOCK" : "OUT_OF_STOCK";
+        }
+
         if ($product instanceof \WC_Product_Variation) {
             $parent_product_id = $product->get_parent_id();
             $cart_item['product_data']['id'] = $parent_product_id;
@@ -1990,6 +2047,77 @@ class GokwikCart
             ['session_value' => $serialized_session],
             ['session_key' => $session_key]
         );
+    }
+
+    /**
+     * Remove out of stock items
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     * @since 1.1.3
+     */
+    public function removeOutOfStockItems($request)
+    {
+        global $wpdb;
+        $manage_woocommerce_stock = get_option('woocommerce_manage_stock');
+        if ($manage_woocommerce_stock == 'no') {
+            return new WP_REST_Response(
+                ['message' => "Stock management is disabled."],
+                404
+            );
+        }
+        $session_key = $request->get_param('session_key');
+        $cartSessionResponse = $this->loadCartSession($session_key);
+        $cart_updated_flag = 0;
+        if (is_wp_error($cartSessionResponse)) {
+            return $cartSessionResponse;
+        } else {
+            [$wc_session_data, $cartObj] = $cartSessionResponse;
+        }
+        $sessions_table = $wpdb->prefix . 'woocommerce_sessions';
+        $session_data = $wpdb->get_var($wpdb->prepare("SELECT session_value FROM $sessions_table WHERE session_key = %s", $session_key));
+        if ($session_data) {
+            $session_data_unserialized = maybe_unserialize($session_data);
+            $cart = maybe_unserialize($session_data_unserialized['cart']);
+            foreach ($cart as $cart_item_key => $cart_item) {
+                $product_id = $cart_item['product_id'];
+                $product_qty = $cart_item['quantity'];
+                $stock = get_post_meta($product_id, '_stock', true);
+                $managing_stock = get_post_meta($product_id, '_manage_stock', true) === 'yes';
+                if ($managing_stock) {
+                    if ($stock == 0) {
+                        unset($cart[$cart_item_key]);
+                        $cart_updated_flag = 1;
+                    } elseif ($product_qty > $stock) {
+                        $cart[$cart_item_key]['quantity'] = $stock;
+                        $cart_updated_flag = 1;
+                    }
+                }
+            }
+            if ($cart_updated_flag == 1) {
+                $session_data_unserialized['cart'] = maybe_serialize($cart);
+                $this->updateSessionData($session_key, $session_data_unserialized);
+            }
+        }
+        if (is_user_logged_in() && $cart_updated_flag == 1) {
+            $session_user_data = maybe_unserialize($wc_session_data['customer']);
+            $session_user_id = $session_user_data['id'];
+            WC()->session->set_customer_session_cookie(true);
+            WC()->session->set('cart', $cart);
+            WC()->cart->persistent_cart_update($session_user_id);
+        }
+        if ($cart_updated_flag == 1) {
+            $response_data = [
+                'status' => 'success',
+                'message' => 'Out-of-stock items have been removed from the cart'
+            ];
+        } else {
+            $response_data = [
+                'status' => 'success',
+                'message' => 'No out-of-stock items in the cart'
+            ];
+        }
+        return new WP_REST_Response($response_data, 200);
     }
 }
 
