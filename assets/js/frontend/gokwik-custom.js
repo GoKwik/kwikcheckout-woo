@@ -122,6 +122,13 @@ jQuery(document).ready(function () {
 
     function setupMiniCartCheckoutButton(selector, sessionId) {
         jQuery(selector).each(function() {
+			
+			const $original = jQuery(this);
+			if ($original.hasClass('gc-button-replaced')) {
+				return;
+			}
+			
+			const originalBtn = jQuery(selector);
             const gcButtonClass = jQuery(this).attr("class") ?? '';
             const gcButtonId = jQuery(this).attr("id") ?? '';
             const gcButton = jQuery('<a>', {
@@ -131,6 +138,20 @@ jQuery(document).ready(function () {
                 text: 'Checkout'
             });
             jQuery(this).replaceWith(gcButton);
+			
+			if (!gc_data.replace_woocommerce_native_checkout_with_gokwik) {
+				const priceSpan = originalBtn.find('.woocommerce-Price-amount').clone();
+				const nativeBtn = jQuery('<a>', {
+					href: "/checkout/",
+					class: `${gcButtonClass} gc-gokwik-btn gc-button-replaced`,
+					id: gcButtonId,
+					text: 'Checkout'
+				});
+				nativeBtn.append(priceSpan);
+				gcButton.after(nativeBtn);
+			}
+			gcButton.addClass('gc-button-replaced');
+			
             gcButton.on('click', function (event) {
                 event.preventDefault();
                 gcButton.html('Loading...');
@@ -147,7 +168,7 @@ jQuery(document).ready(function () {
             return;
         }
 
-        if (gc_data.enable_gokwik_checkout_on_cart_page) {
+        if (gc_data.replace_woocommerce_native_checkout_with_gokwik) {
             const gcCheckoutBtnText = 'Place Order <img src="https://cdn.gokwik.co/v4/images/upi-icons.svg" class="gokwik_logo">';
             const gcCheckoutBtn = jQuery('.wc-proceed-to-checkout .checkout-button').not('.native_checkout_button');
             if (gcCheckoutBtn.length) {
@@ -158,6 +179,34 @@ jQuery(document).ready(function () {
                     html: gcCheckoutBtnText
                 });
                 gcCheckoutBtn.replaceWith(newGcCheckoutBtn);
+                fetchUserSessionId().then(sessionId => {
+                    newGcCheckoutBtn.on('click', e => {
+                        e.preventDefault();
+                        newGcCheckoutBtn.html('Loading...');
+                        setTimeout(() => {
+                            newGcCheckoutBtn.html(gcCheckoutBtnText);
+                        }, 3000);
+                        initGoKwikCheckout(sessionId);
+                    });
+                });
+            }
+        }
+
+        if (gc_data.enable_gokwik_checkout_on_cart_page && !gc_data.replace_woocommerce_native_checkout_with_gokwik) {
+            const gcCheckoutBtnText = 'Place Order <img src="https://cdn.gokwik.co/v4/images/upi-icons.svg" class="gokwik_logo">';
+            const gcCheckoutBtn = jQuery('.wc-proceed-to-checkout .checkout-button').not('.native_checkout_button');
+
+            if (gcCheckoutBtn.length && jQuery('.gokwik_checkout_button').length === 0) {
+                const newGcCheckoutBtn = gcCheckoutBtn.clone();
+
+                newGcCheckoutBtn
+                    .removeClass('native_checkout_button')
+                    .addClass('gokwik_checkout_button')
+                    .attr('id', 'gokwik-checkout-button')
+                    .html(gcCheckoutBtnText);
+
+                gcCheckoutBtn.after(newGcCheckoutBtn);
+
                 fetchUserSessionId().then(sessionId => {
                     newGcCheckoutBtn.on('click', e => {
                         e.preventDefault();

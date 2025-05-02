@@ -196,10 +196,23 @@ class GokwikSettings
                 'id' => 'wc_settings_gokwik_section_allow_pending_flow',
                 'desc_tip' => 'Enable to create orders in payment pending state.',
             ],
-            'section_end_general' => [
-                'type' => 'sectionend',
-                'id' => 'wc_settings_gokwik_section_end_general',
-            ],
+        ];
+
+        $site_url = parse_url(get_site_url(), PHP_URL_HOST);
+        if ($site_url && strpos($site_url, 'gokwik.co') !== false) {
+            $settings['gokwik_test_order_retry'] = [
+                'name' => 'Test Order Retry Flow',
+                'type' => 'checkbox',
+                'desc' => 'Intentionally fail placeOrder API for testing order retry flow.',
+                'default' => 'no',
+                'id' => 'wc_settings_gokwik_section_test_order_retry',
+                'desc_tip' => 'Enable this option to simulate placeOrder API failures for testing the order retry mechanism.',
+            ];
+        }
+
+        $settings['section_end_general'] = [
+            'type' => 'sectionend',
+            'id' => 'wc_settings_gokwik_section_end_general',
         ];
 
         return apply_filters('wc_settings_gokwik_general', $settings);

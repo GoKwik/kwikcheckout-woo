@@ -7,17 +7,17 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.5
+ * Version:               1.1.6
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
  * Domain Path:           /languages/
  * Requires at least:     5.4
- * Requires PHP:          7.0
+ * Requires PHP:          7.4
  * Requires Plugins:      woocommerce
  * WC requires at least:  4.3
- * WC tested up to:       9.7
- * WP tested up to:       6.7
+ * WC tested up to:       9.8
+ * WP tested up to:       6.8
  *
  * @package               Gokwik_Checkout
  * @link                  https://gokwik.co
@@ -30,7 +30,7 @@ if (!defined('WPINC')) {
 }
 
 // Define plugin version and configuration constants
-define('GOKWIKCHECKOUT_VERSION', '1.1.5');
+define('GOKWIKCHECKOUT_VERSION', '1.1.6');
 define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', get_option('wc_settings_gokwik_section_allow_pending_flow', 'no') === 'yes');
 define('GOKWIKCHECKOUT_DEVELOPMENT_MODE', false);
 
@@ -440,6 +440,7 @@ function gc_enqueue_custom_script()
         'is_international_user' => GokwikUtilities::isInternationalUser(),
         'enable_gokwik_checkout_on_side_cart' => get_option('wc_settings_gokwik_section_enable_checkout_from_side_cart', 'yes') == 'yes',
         'enable_gokwik_checkout_on_cart_page' => get_option('wc_settings_gokwik_section_enable_checkout_from_cart_page', 'yes') == 'yes',
+		'replace_woocommerce_native_checkout_with_gokwik' => get_option('wc_settings_gokwik_section_overwrite_native_checkout_page', 'yes') == 'yes',
     ];
     wp_localize_script('gcCustomScript', 'gc_data', $script_data);
 }
