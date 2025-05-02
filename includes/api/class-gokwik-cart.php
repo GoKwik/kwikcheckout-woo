@@ -1018,6 +1018,15 @@ class GokwikCart
     {   
         global $wpdb;
 
+        $test_order_retry = get_option('wc_settings_gokwik_section_test_order_retry', 'no');
+        if ($test_order_retry === 'yes') {
+            return new WP_Error(
+                'gc_cart_test_order_retry',
+                'This is a simulated failure for testing order retry flow.',
+                ['status' => 500]
+            );
+        }
+
         $session_key = $request->get_param('session_key');
         $cartSessionResponse = $this->loadCartSession($session_key);
         if (is_wp_error($cartSessionResponse)) {
@@ -1035,7 +1044,7 @@ class GokwikCart
             $billing_state = GokwikUtilities::getStateCode($billing_state);
         }
         $shipping_state = $shipping_address['state'] ?? null;
-        if (strlen($billing_state) !== 2) {
+        if (strlen($shipping_state) !== 2) {
             $shipping_state = GokwikUtilities::getStateCode($shipping_state);
         }
         $status = wc_clean(wp_unslash($request->get_param('status')));
@@ -1214,8 +1223,8 @@ class GokwikCart
         $billingGstNo = null;
         $pys_data = array();
         $source_type = "typein";
-        $cookie_data = $wc_session_data['cookies'] ? maybe_unserialize($wc_session_data['cookies']) : array();
-        $referrer = $cookie_data['origin_referrer'] ? $cookie_data['origin_referrer'] : "";
+        $cookie_data = isset($wc_session_data['cookies']) ? maybe_unserialize($wc_session_data['cookies']) : array();
+        $referrer = isset($cookie_data['origin_referrer']) ? $cookie_data['origin_referrer'] : "";
         $ad_source = $cookie_data['ad_source'] ?? "";
         if ($ad_source != "") {
             if (strpos($ad_source, '?') === 0) {
@@ -1378,15 +1387,15 @@ class GokwikCart
         $order->update_meta_data('_wc_order_attribution_source_type', $source_type);
         
         if (class_exists('PixelYourSite\PYS')) {
-            $pys_enrich_data = $order->get_meta('pys_enrich_data');
+            $pys_enrich_data = $order->get_meta('pys_enrich_data') ?: [];
             $pys_utm = isset($pys_enrich_data['pys_utm']) ? explode("|", $pys_enrich_data['pys_utm']) : [];
             $pys_utm_updated = array();
             $last_pys_utm_updated = array();
-            $utm_source = $pys_data["utm_source"] ?? $cookie_data['pys_utm_source'] ?? "undefined";
-            $utm_medium = $pys_data["utm_medium"] ?? $cookie_data['pys_utm_medium'] ?? "undefined";
-            $utm_campaign = $pys_data["utm_campaign"] ?? $cookie_data['pys_utm_campaign'] ?? "undefined";
-            $utm_term = $pys_data["utm_term"] ?? $cookie_data['pys_utm_term'] ?? "undefined";
-            $utm_content = $pys_data["utm_content"] ?? $cookie_data['pys_utm_content'] ?? "undefined";
+            $utm_source = $pys_data["utm_source"] ?? ($cookie_data['pys_utm_source'] ?? "undefined");
+            $utm_medium = $pys_data["utm_medium"] ?? ($cookie_data['pys_utm_medium'] ?? "undefined");
+            $utm_campaign = $pys_data["utm_campaign"] ?? ($cookie_data['pys_utm_campaign'] ?? "undefined");
+            $utm_term = $pys_data["utm_term"] ?? ($cookie_data['pys_utm_term'] ?? "undefined");
+            $utm_content = $pys_data["utm_content"] ?? ($cookie_data['pys_utm_content'] ?? "undefined");
             $pys_landing_page = $cookie_data["pys_landing_page"] ?? "";
             $pysTrafficSource = $cookie_data["pysTrafficSource"] ?? "";
             $last_pys_landing_page = $cookie_data["last_pys_landing_page"] ?? "";
@@ -1400,11 +1409,13 @@ class GokwikCart
             ];
             foreach ($pys_utm as $pys_utm_data) {
                 $psy_utm_data_ex = explode(":", $pys_utm_data);
-                $utm_key = $psy_utm_data_ex[0];
-                if (isset($utm_mapping[$utm_key])) {
-                    $updated_value = $utm_key . ":" . $utm_mapping[$utm_key];
-                    $pys_utm_updated[] = $updated_value;
-                    $last_pys_utm_updated[] = $updated_value;
+                if (count($psy_utm_data_ex) >= 1) {
+                    $utm_key = $psy_utm_data_ex[0];
+                    if (isset($utm_mapping[$utm_key])) {
+                        $updated_value = $utm_key . ":" . $utm_mapping[$utm_key];
+                        $pys_utm_updated[] = $updated_value;
+                        $last_pys_utm_updated[] = $updated_value;
+                    }
                 }
             }
 
@@ -1443,24 +1454,6 @@ class GokwikCart
             }
         }
 
-        if ($transaction_id && !$is_paid) {
-            $order->set_transaction_id($transaction_id);
-            $meta_key = 'advance_payment_transaction_id';
-            $meta_value = $transaction_id;
-            if (GokwikUtilities::isHposEnabled()) {
-                $order->update_meta_data($meta_key, $meta_value);
-            } else {
-                update_post_meta($order->get_id(), $meta_key, $meta_value);
-            }
-        }
-        if ($is_paid) {
-            $order->payment_complete($transaction_id ?? null);
-            $order->save();
-        }
-        if ($status === 'processing') {
-            $order->update_status($status);
-        }
-
         foreach ($fee_lines as $fee) {
             $feeName = $fee['name'] ?? null;
             $feeTotal = (float) ($fee['total'] ?? 0);
@@ -1477,6 +1470,24 @@ class GokwikCart
             $orderItemFee->set_taxes(false);
             $orderItemFee->save();
             $order->add_item($orderItemFee);
+        }
+        
+        if ($transaction_id && !$is_paid) {
+            $order->set_transaction_id($transaction_id);
+            $meta_key = 'advance_payment_transaction_id';
+            $meta_value = $transaction_id;
+            if (GokwikUtilities::isHposEnabled()) {
+                $order->update_meta_data($meta_key, $meta_value);
+            } else {
+                update_post_meta($order->get_id(), $meta_key, $meta_value);
+            }
+        }
+        if ($is_paid) {
+            $order->payment_complete($transaction_id ?? null);
+            $order->save();
+        }
+        if ($status === 'processing') {
+            $order->update_status($status);
         }
 
         $order->calculate_totals(false);
@@ -1666,7 +1677,7 @@ class GokwikCart
             );
         }
 
-        if (get_option('wc_settings_gokwik_section_mid') !== $merchantId) {
+        if (get_option('wc_settings_gokwik_section_mid') != $merchantId) {
             return new WP_Error(
                 'gc_merchant_id_not_found',
                 'Merchant ID not found.',
@@ -1678,7 +1689,7 @@ class GokwikCart
             return new WP_Error(
                 'gc_invalid_hmac',
                 'Invalid hmac.',
-                ['status' => 404]
+                ['status' => 400]
             );
         }
 
@@ -1707,7 +1718,7 @@ class GokwikCart
             return new WP_Error(
                 'gc_invalid_payment_method',
                 'Refunds are only for GoKwik prepaid orders.',
-                ['status' => 404]
+                ['status' => 400]
             );
         }
 
@@ -1715,13 +1726,7 @@ class GokwikCart
             return new WP_Error(
                 'gc_invalid_transaction',
                 'Invalid Transaction.',
-                ['status' => 404]
-            );
-        } elseif (!$order->get_transaction_id()) {
-            return new WP_Error(
-                'gc_transaction_id_missing',
-                'Transaction Id does not exist.',
-                ['status' => 404]
+                ['status' => 400]
             );
         }
 
@@ -1730,11 +1735,7 @@ class GokwikCart
         foreach ($order->get_refunds() as $refund) {
             $custom_refund_id = $refund->get_meta('_gokwik_refund_id');
             if ($custom_refund_id == $refundId) {
-                return new WP_Error(
-                    'gc_refund_exists',
-                    'Refund already exists.',
-                    ['status' => 404]
-                );
+                return new WP_REST_Response(['message' => 'Refund processed in WooCommerce.'], 200);
             }
 
             if ($event == "refund.successful" && empty($custom_refund_id)) {
@@ -1755,7 +1756,7 @@ class GokwikCart
             return new WP_Error(
                 'gc_refund_exceeds_total',
                 'Refund amount exceeds order total.',
-                ['status' => 404]
+                ['status' => 400]
             );
         }
 
@@ -1784,6 +1785,11 @@ class GokwikCart
                         'refund_payment' => false,
                         'restock_items' => true,
                     ]);
+                    
+                    if (is_wp_error($refund)) {
+                        return $refund;
+                    }
+                    
                     $order->update_status("wc-refunded");
                 } else {
                     $refund_reason = "Partial refund via GoKwik";
@@ -1794,11 +1800,7 @@ class GokwikCart
                     ]);
 
                     if (is_wp_error($refund)) {
-                        return new WP_Error(
-                            'gc_refund_creation_error',
-                            $refund->get_error_message(),
-                            ['status' => 404]
-                        );
+                        return $refund;
                     }
 
                     $refund->update_meta_data('_gokwik_refund_id', $refundId);
@@ -2106,15 +2108,23 @@ class GokwikCart
             WC()->session->set('cart', $cart);
             WC()->cart->persistent_cart_update($session_user_id);
         }
+        
+        $cartData = $this->getCartData($session_key, $request);
+        if (is_wp_error($cartData)) {
+            return $cartData;
+        }
+
         if ($cart_updated_flag == 1) {
             $response_data = [
                 'status' => 'success',
-                'message' => 'Out-of-stock items have been removed from the cart'
+                'message' => 'Out-of-stock items have been removed from the cart',
+                'cart' => $cartData['cartResponse']
             ];
         } else {
             $response_data = [
                 'status' => 'success',
-                'message' => 'No out-of-stock items in the cart'
+                'message' => 'No out-of-stock items in the cart',
+                'cart' => $cartData['cartResponse']
             ];
         }
         return new WP_REST_Response($response_data, 200);

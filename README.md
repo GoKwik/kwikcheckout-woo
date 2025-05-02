@@ -17,14 +17,17 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 
 - WordPress 5.4 or higher
 - WooCommerce 4.3 or higher
-- PHP 7.0 or higher
+- PHP 7.4 or higher
 
 ## Compatibility
 
-- Tested up to WooCommerce version: 9.7
-- Tested up to WordPress version: 6.7
+- Tested up to WooCommerce version: 9.8
+- Tested up to WordPress version: 6.8
 
 ## Changelog
+
+### Version 1.1.6
+- [Enhancement] Minor improvements to enhance performance and stability.
 
 ### Version 1.1.5
 - [Feature] Added support for KwikFlows.
