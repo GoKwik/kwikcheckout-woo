@@ -164,61 +164,80 @@ jQuery(document).ready(function () {
     }
 
     function renderCheckoutButtons() {
-        if (gc_data.is_international_user) {
-            return;
-        }
+        if (gc_data.is_international_user) return;
 
-        if (gc_data.replace_woocommerce_native_checkout_with_gokwik) {
-            const gcCheckoutBtnText = 'Place Order <img src="https://cdn.gokwik.co/v4/images/upi-icons.svg" class="gokwik_logo">';
-            const gcCheckoutBtn = jQuery('.wc-proceed-to-checkout .checkout-button').not('.native_checkout_button');
-            if (gcCheckoutBtn.length) {
+        const gcCheckoutBtnText = 'Place Order <img src="https://cdn.gokwik.co/v4/images/upi-icons.svg" class="gokwik_logo">';
+
+        function processButtons() {
+            // Support both Classic + Blocks checkout buttons
+            const selectors = [
+                '.wc-proceed-to-checkout .checkout-button',
+                '.wc-block-cart__submit-button',
+                'a.checkout-button',
+                '.wp-block-woocommerce-cart .wc-block-cart__submit-button'
+            ];
+
+            let gcCheckoutBtn = null;
+            for (const selector of selectors) {
+                const btn = jQuery(selector).not('.native_checkout_button, .gokwik_checkout_button').first();
+                if (btn.length) {
+                    gcCheckoutBtn = btn;
+                    break;
+                }
+            }
+
+            if (!gcCheckoutBtn || !gcCheckoutBtn.length) return;
+
+            // Case 1: Replace native checkout
+            if (gc_data.replace_woocommerce_native_checkout_with_gokwik) {
                 const newGcCheckoutBtn = jQuery('<a>', {
                     href: "#",
                     class: gcCheckoutBtn.attr("class"),
-                    id: gcCheckoutBtn.attr("id"),
+                    id: gcCheckoutBtn.attr("id") || 'gokwik-checkout-button',
                     html: gcCheckoutBtnText
                 });
                 gcCheckoutBtn.replaceWith(newGcCheckoutBtn);
-                fetchUserSessionId().then(sessionId => {
-                    newGcCheckoutBtn.on('click', e => {
-                        e.preventDefault();
-                        newGcCheckoutBtn.html('Loading...');
-                        setTimeout(() => {
-                            newGcCheckoutBtn.html(gcCheckoutBtnText);
-                        }, 3000);
-                        initGoKwikCheckout(sessionId);
-                    });
-                });
-            }
-        }
-
-        if (gc_data.enable_gokwik_checkout_on_cart_page && !gc_data.replace_woocommerce_native_checkout_with_gokwik) {
-            const gcCheckoutBtnText = 'Place Order <img src="https://cdn.gokwik.co/v4/images/upi-icons.svg" class="gokwik_logo">';
-            const gcCheckoutBtn = jQuery('.wc-proceed-to-checkout .checkout-button').not('.native_checkout_button');
-
-            if (gcCheckoutBtn.length && jQuery('.gokwik_checkout_button').length === 0) {
-                const newGcCheckoutBtn = gcCheckoutBtn.clone();
-
-                newGcCheckoutBtn
-                    .removeClass('native_checkout_button')
-                    .addClass('gokwik_checkout_button')
-                    .attr('id', 'gokwik-checkout-button')
-                    .html(gcCheckoutBtnText);
-
-                gcCheckoutBtn.after(newGcCheckoutBtn);
 
                 fetchUserSessionId().then(sessionId => {
                     newGcCheckoutBtn.on('click', e => {
                         e.preventDefault();
                         newGcCheckoutBtn.html('Loading...');
-                        setTimeout(() => {
-                            newGcCheckoutBtn.html(gcCheckoutBtnText);
-                        }, 3000);
+                        setTimeout(() => newGcCheckoutBtn.html(gcCheckoutBtnText), 3000);
                         initGoKwikCheckout(sessionId);
                     });
                 });
             }
+
+            // Case 2: Add alongside
+            else if (gc_data.enable_gokwik_checkout_on_cart_page) {
+                if (jQuery('.gokwik_checkout_button').length === 0) {
+                    const newGcCheckoutBtn = gcCheckoutBtn.clone();
+                    newGcCheckoutBtn
+                        .removeClass('native_checkout_button')
+                        .addClass('gokwik_checkout_button')
+                        .attr('id', 'gokwik-checkout-button')
+                        .html(gcCheckoutBtnText);
+
+                    gcCheckoutBtn.after(newGcCheckoutBtn);
+
+                    fetchUserSessionId().then(sessionId => {
+                        newGcCheckoutBtn.on('click', e => {
+                            e.preventDefault();
+                            newGcCheckoutBtn.html('Loading...');
+                            setTimeout(() => newGcCheckoutBtn.html(gcCheckoutBtnText), 3000);
+                            initGoKwikCheckout(sessionId);
+                        });
+                    });
+                }
+            }
         }
+
+        // Run once immediately
+        processButtons();
+
+        // Observe the whole body since WooCommerce re-renders buttons dynamically
+        const observer = new MutationObserver(() => processButtons());
+        observer.observe(document.body, { childList: true, subtree: true });
 
         if (gc_data.enable_gokwik_checkout_on_side_cart) {
             const sideCartSelectors = [
