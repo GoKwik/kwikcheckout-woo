@@ -1,0 +1,52 @@
+.gokwik-analytics-dashboard {
+    padding: 20px;
+}
+
+.gokwik-analytics-filters {
+    margin: 20px 0;
+}
+
+.gokwik-analytics-filters select {
+    padding: 8px 12px;
+    font-size: 14px;
+}
+
+.gokwik-analytics-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin: 30px 0;
+}
+
+.analytics-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.analytics-card h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.analytics-card .card-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #2271b1;
+}
+
+.gokwik-analytics-chart {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 30px;
+}
+
+.gokwik-analytics-chart h2 {
+    margin-top: 0;
+}
