@@ -175,6 +175,11 @@ class GokwikCheckout
         require_once GOKWIKCHECKOUT_DIR . 'includes/class-gokwik-updater.php';
         \Gokwik_Checkout\Inc\GokwikUpdater::instance();
 
+        // Load Analytics classes.
+        require_once GOKWIKCHECKOUT_DIR . 'includes/class-gokwik-analytics.php';
+        require_once GOKWIKCHECKOUT_DIR . 'includes/class-gokwik-analytics-dashboard.php';
+        add_action('init', array($this, 'init_analytics'));
+
         // Check if Store Currency is INR.
         if (!in_array(get_woocommerce_currency(), apply_filters('woocommerce_gokwik_supported_currencies', array('INR')), true)) {
             add_action('admin_notices', function () {?>
@@ -245,6 +250,18 @@ class GokwikCheckout
     {
         $gateways[] = '\Gokwik_Checkout\Inc\GokwikPrepaidGateway';
         return $gateways;
+    }
+
+    /**
+     * Initialize Analytics.
+     *
+     * @access  public
+     * @since   1.1.7
+     */
+    public function init_analytics()
+    {
+        $analytics = GoKwik_Analytics::get_instance();
+        $analytics->create_table();
     }
 
 }
@@ -443,6 +460,14 @@ function gc_enqueue_custom_script()
 		'replace_woocommerce_native_checkout_with_gokwik' => get_option('wc_settings_gokwik_section_overwrite_native_checkout_page', 'yes') == 'yes',
     ];
     wp_localize_script('gcCustomScript', 'gc_data', $script_data);
+
+    // Enqueue Analytics Tracker
+    $analytics_script_url = plugin_dir_url(GOKWIKCHECKOUT_FILE) . 'assets/js/frontend/gokwik-analytics-tracker.js';
+    wp_enqueue_script('gcAnalyticsTracker', $analytics_script_url, ['jquery'], time(), true);
+    wp_localize_script('gcAnalyticsTracker', 'gokwikAnalyticsData', [
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('gokwik_analytics')
+    ]);
 }
 
 /**
