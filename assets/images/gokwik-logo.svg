@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg enable-background="new 0 0 99.1 100" version="1.1" viewBox="0 0 99.1 100" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
+<style type="text/css">
+	.st0{fill:url(#a);}
+	.st1{fill:url(#SVGID_00000127026819616122446790000002374804955798931841_);}
+	.st2{fill:url(#SVGID_00000088097282286972124810000003994709699396940951_);}
+	.st3{fill:url(#SVGID_00000029007129514556238020000013078398115116283291_);}
+	.st4{fill:url(#SVGID_00000163771777229518222480000010339463863091430062_);}
+	.st5{fill:url(#SVGID_00000078042397824704177030000016928237641691506851_);}
+</style>
+
+	
+		<linearGradient id="a" x1="1.1861" x2="30.561" y1="98.799" y2="69.424" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#EDDF5E" offset="0"/>
+			<stop stop-color="#EF9921" offset="1"/>
+		</linearGradient>
+		<path class="st0" d="m67.3 62.6-35.5 35.5c-2.6 2.6-6.8 2.6-9.3 0l-20.6-20.6c-2.6-2.6-2.6-6.8 0-9.3l48.1-48.1 17.3 17.3c6.9 7 6.9 18.2 0 25.2z"/>
+		
+			<linearGradient id="f" x1="-6.2959" x2="17.536" y1="95.525" y2="71.693" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#EDDF5E" offset="0"/>
+			<stop stop-color="#EF9921" offset="1"/>
+		</linearGradient>
+		<polygon points="53.4 43.4 10.6 86.2 3 78.6 45.8 35.8" fill="url(#f)"/>
+		
+			<linearGradient id="c" x1="-7.6095" x2="70.19" y1="-7.6095" y2="70.19" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#EECF4E" offset="0"/>
+			<stop stop-color="#EF9921" offset="1"/>
+		</linearGradient>
+		<path d="m50 79.8-48.1-48c-2.6-2.6-2.6-6.8 0-9.3l20.6-20.6c2.6-2.6 6.8-2.6 9.3 0l35.5 35.5c6.9 6.9 6.9 18.2 0 25.1l-17.3 17.3z" fill="url(#c)"/>
+	
+	
+		
+			<linearGradient id="d" x1="113.72" x2="41.146" y1="12.932" y2="85.501" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#0E1127" offset=".1617"/>
+			<stop stop-color="#0D4D8C" offset="1"/>
+		</linearGradient>
+		<path d="m86.7 69.8-28.3 28.3c-2.6 2.6-6.8 2.6-9.3 0l-20.5-20.6c-2.6-2.6-2.6-6.8 0-9.3l28.3-28.3 29.8 29.9z" fill="url(#d)"/>
+		
+			<linearGradient id="b" x1="73.002" x2="32.856" y1="42.887" y2="83.032" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#0E1127" offset=".1617"/>
+			<stop stop-color="#0D4D8C" offset="1"/>
+		</linearGradient>
+		<polygon points="80.1 43.4 37.3 86.2 29.7 78.6 72.5 35.8" fill="url(#b)"/>
+		
+			<linearGradient id="e" x1="-75.086" x2="72.094" y1="-86.226" y2="60.955" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#0E1127" offset=".1617"/>
+			<stop stop-color="#0D4D8C" offset="1"/>
+		</linearGradient>
+		<path d="m93.9 37.4-35.4-35.4c-2.6-2.6-6.8-2.6-9.4 0l-20.5 20.4c-2.6 2.6-2.6 6.8 0 9.4l32.5 32.5c8.6 8.6 8.6 22.5 0 31l32.8-32.8c7-6.9 7-18.1 0-25.1z" fill="url(#e)"/>
+	
+
+</svg>

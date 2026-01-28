@@ -7,7 +7,7 @@
  * Plugin Name:           GoKwik Checkout
  * Plugin URI:            https://gokwik.co
  * Description:           Supercharge your business with the best checkout experience.
- * Version:               1.1.6
+ * Version:               1.2.0
  * Author:                Team GoKwik
  * Author URI:            https://gokwik.co
  * Text Domain:           gokwik-checkout
@@ -16,7 +16,7 @@
  * Requires PHP:          7.4
  * Requires Plugins:      woocommerce
  * WC requires at least:  4.3
- * WC tested up to:       9.8
+ * WC tested up to:       10.0
  * WP tested up to:       6.8
  *
  * @package               Gokwik_Checkout
@@ -30,7 +30,7 @@ if (!defined('WPINC')) {
 }
 
 // Define plugin version and configuration constants
-define('GOKWIKCHECKOUT_VERSION', '1.1.6');
+define('GOKWIKCHECKOUT_VERSION', '1.2.0');
 define('GOKWIKCHECKOUT_PENDING_ORDER_FLOW', get_option('wc_settings_gokwik_section_allow_pending_flow', 'no') === 'yes');
 define('GOKWIKCHECKOUT_DEVELOPMENT_MODE', false);
 
@@ -86,8 +86,19 @@ if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get
     return;
 }
 
+// Load Product Sync class.
+include_once GOKWIKCHECKOUT_DIR . '/includes/class-gokwik-product-sync.php';
+use Gokwik_Checkout\Inc\GokwikProductSync;
+
 // Register plugin activation hook.
-register_activation_hook(GOKWIKCHECKOUT_FILE, 'gc_plugin_activated');
+register_activation_hook(GOKWIKCHECKOUT_FILE, function() {
+    gc_plugin_activated();
+    if (!get_option('gokwik_product_sync_done')) {
+        if (!wp_next_scheduled('gokwik_product_sync_event')) {
+            wp_schedule_single_event(time() + 10, 'gokwik_product_sync_event');
+        }
+    }
+});
 function gc_plugin_activated()
 {
     $options_to_update = [
@@ -467,24 +478,82 @@ function gc_enqueue_custom_css()
 // Make Thank-You page accessible without logging in.
 add_filter('woocommerce_order_received_verify_known_shoppers', '__return_false');
 
+// Prevent applying GoKwik virtual coupons via native WooCommerce flows
+add_filter('woocommerce_coupon_is_valid', function($valid, $coupon) {
+    $is_gk_virtual = get_post_meta($coupon->get_id(), '_gk_virtual_coupon', true) === 'yes';
+    if ($is_gk_virtual && (!defined('GOKWIKCHECKOUT_APPLYING_VIRTUAL_COUPON') || !GOKWIKCHECKOUT_APPLYING_VIRTUAL_COUPON)) {
+        return false;
+    }
+    return $valid;
+}, 10, 2);
+
+// Ensure virtual coupons don't apply tax by default
+add_filter('woocommerce_coupon_get_discount_amount', function($discount, $discounting_amount, $cart_item, $single, $coupon) {
+    if ($coupon instanceof WC_Coupon) {
+        $is_gk_virtual = get_post_meta($coupon->get_id(), '_gk_virtual_coupon', true) === 'yes';
+        if ($is_gk_virtual) {
+            return $discount;
+        }
+    }
+    return $discount;
+}, 10, 5);
+
 // Display PPCOD details in orders table.
 add_action('woocommerce_admin_order_totals_after_tax', 'gc_display_ppcod_data_order_table_tr', 20, 1);
 function gc_display_ppcod_data_order_table_tr($order_id)
 {
     $order = wc_get_order($order_id);
+	 /**
+     * ==========================
+     * PPCOD ADVANCE / DUE DISPLAY
+     * ==========================
+     */
     $ppcod_data = GokwikUtilities::getPpCodFormattedAmounts($order);
-
+    $enable_split = get_option('wc_settings_gokwik_section_enable_ppcod_order_total_format', 'no') === 'yes';
     if ($ppcod_data['is_ppcod']) {
+        if ($enable_split) {
+            $advance = $ppcod_data['formatted_advance_amount'];
+            $due = $ppcod_data['formatted_due_amount'];
+            ?>
+            <tr>
+                <td class="label" style="color:green;"><?php echo esc_html('Advance Paid'); ?>:</td>
+                <td width="1%"></td>
+                <td class="total" style="color:green;"><?php echo $advance; ?></td>
+            </tr>
+            <tr>
+                <td class="label" style="color:red;"><?php echo esc_html('Due Amount'); ?>:</td>
+                <td width="1%"></td>
+                <td class="total" style="color:red;"><?php echo $due; ?></td>
+            </tr>
+            <?php
+        } else {
+            ?>
+            <tr>
+                <td class="label"><?php echo esc_html('Advance Paid'); ?>:</td>
+                <td width="1%"></td>
+                <td class="total"><?php echo '-' . $ppcod_data['formatted_advance_amount']; ?></td>
+            </tr>
+            <?php
+        }
+    }
+	/**
+     * ==========================
+     * PREPAID DISCOUNT DISPLAY
+     * ==========================
+     */
+    $prepaid_discount = (float) $order->get_meta('_gk_prepaid_discount_amount');
+
+    if ($prepaid_discount > 0) {
         ?>
         <tr>
-            <td class="label"><?php echo esc_html('Advance Paid'); ?>:</td>
+            <td class="label"><?php esc_html_e('Prepaid Discount'); ?>:</td>
             <td width="1%"></td>
             <td class="total">
-                <?php echo '-' . $ppcod_data['formatted_advance_amount']; ?>
+                -<?php echo wc_price($prepaid_discount); ?>
             </td>
         </tr>
         <?php
-}
+    }
 }
 
 // Add "Prepaid COD Order" tag to order name in WooCommerce admin.
@@ -542,7 +611,24 @@ function gc_add_to_cart()
     if (!isset($_POST['add-to-cart'])) {
         return;
     }
-    do_action('woocommerce_ajax_added_to_cart', intval($_POST['add-to-cart']));
+    
+    WC()->cart->empty_cart();
+    $product_id = intval($_POST['add-to-cart']);
+    $quantity = isset($_POST['quantity']) ? intval($_POST['quantity']) : 1;
+    $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
+    $variations = [];
+    
+    if ($variation_id) {
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'attribute_') === 0) {
+                $variations[$key] = sanitize_text_field($value);
+            }
+        }
+    }
+    
+    WC()->cart->add_to_cart($product_id, $quantity, $variation_id, $variations);
+    
+    do_action('woocommerce_ajax_added_to_cart', $product_id);
     WC_AJAX::get_refreshed_fragments();
 }
 
@@ -635,9 +721,186 @@ function gc_notify_order_update($order_id)
     }
 }
 
+// On plugin load, ensure sync runs if not done.
+add_action('init', function() {
+    if (!get_option('gokwik_product_sync_done') && !get_transient(GokwikProductSync::SYNC_TRANSIENT)) {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->info('GoKwik: Initial product sync triggered on plugin load.', ['source' => 'gokwik']);
+        }
+        GokwikProductSync::sync_all_products();
+    }
+});
+
+// Scheduled event handler.
+add_action('gokwik_product_sync_event', function() {
+    if (function_exists('wc_get_logger')) {
+        wc_get_logger()->info('GoKwik: Scheduled product sync event triggered.', ['source' => 'gokwik']);
+    }
+    GokwikProductSync::sync_all_products();
+});
+
+// Product CRUD hooks.
+add_action('save_post_product', function($post_id, $post, $update) {
+    // Only sync if not autosave, not revision, and post is published or updated
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+    if (wp_is_post_revision($post_id)) return;
+    if ($post->post_type !== 'product') return;
+    if ($post->post_status !== 'publish' && $post->post_status !== 'private') return;
+    if (!class_exists('Gokwik_Checkout\Inc\GokwikProductSync')) {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->warning('GoKwik: ProductSync class not loaded during save_post_product.', ['source' => 'gokwik']);
+        }
+        return;
+    }
+    \Gokwik_Checkout\Inc\GokwikProductSync::sync_single_product($post_id, $update ? 'update' : 'create');
+}, 10, 3);
+
+add_action('before_delete_post', function($post_id) {
+    $post = get_post($post_id);
+    if ($post && $post->post_type === 'product') {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->info(
+                sprintf('GoKwik: Product %d delete event triggered.', $post_id),
+                ['source' => 'gokwik']
+            );
+        }
+        GokwikProductSync::sync_single_product($post_id, 'delete');
+    }
+});
+
+// AJAX handler for manual sync.
+add_action('wp_ajax_gokwik_sync_products_now', function() {
+    if (!current_user_can('manage_woocommerce')) {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->warning('GoKwik: Manual sync attempt failed due to insufficient permissions.', ['source' => 'gokwik']);
+        }
+        wp_send_json_error('Permission denied');
+    }
+    if (function_exists('wc_get_logger')) {
+        wc_get_logger()->info('GoKwik: Manual product sync triggered via AJAX.', ['source' => 'gokwik']);
+    }
+    list($success, $msg) = GokwikProductSync::sync_all_products(true);
+    if ($success) {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->info('GoKwik: Manual sync successful. ' . $msg, ['source' => 'gokwik']);
+        }
+        wp_send_json_success([
+            'message' => $msg,
+            'last_sync_time' => date_i18n('Y-m-d H:i:s', get_option('gokwik_product_sync_last_time'))
+        ]);
+    } else {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->error('GoKwik: Manual sync failed. ' . $msg, ['source' => 'gokwik']);
+        }
+        wp_send_json_error($msg);
+    }
+});
+
 // All good, let's initialize.
 add_action('plugins_loaded', 'init_gokwik_checkout_plugin');
 function init_gokwik_checkout_plugin()
 {
     GokwikCheckout::instance();
 }
+
+add_action('woocommerce_before_order_object_save', function ($order) {
+
+    if (!is_admin()) {
+        return;
+    }
+
+    static $running = false;
+    if ($running) return;
+    $running = true;
+
+    $coupon_code   = $order->get_meta('_gk_virtual_coupon_code');
+    $coupon_amount = (float) $order->get_meta('_gk_virtual_coupon_amount');
+
+    if (!$coupon_code || $coupon_amount <= 0) {
+        $running = false;
+        return;
+    }
+
+    // Ensure coupon exists (display only)
+    $coupon_exists = false;
+    foreach ($order->get_items('coupon') as $coupon) {
+        if (strtolower($coupon->get_code()) === strtolower($coupon_code)) {
+            $coupon_exists = true;
+            break;
+        }
+    }
+
+    if (!$coupon_exists) {
+        $coupon = new WC_Order_Item_Coupon();
+        $coupon->set_code($coupon_code);
+        $coupon->set_discount($coupon_amount);
+        $coupon->set_discount_tax(0);
+        $order->add_item($coupon);
+    }
+    $fees_total = 0;
+foreach ($order->get_items('fee') as $fee) {
+    $fees_total += (float) $fee->get_total();
+}
+
+// Other components
+$items_total = (float) $order->get_subtotal();
+$shipping    = (float) $order->get_shipping_total();
+$tax         = (float) $order->get_total_tax();
+
+// Coupon total
+$order->set_discount_total($coupon_amount);
+$order->set_discount_tax(0);
+
+// Final total
+$order->set_total(
+    max(0, $items_total + $fees_total + $shipping + $tax - $coupon_amount)
+);
+
+    $running = false;
+
+}, 20);
+
+add_action('admin_footer', function() {
+    $screen = get_current_screen();
+    if ( $screen && $screen->id === 'shop_order' ) : ?>
+        <script type="text/javascript">
+        jQuery(function($) {
+            function adjustRefundAmount() {
+                const refundAmountInput = $('input#refund_amount');
+                const availableText = $('tr:contains("Total available to refund") td.total').text();
+
+                // Extract numeric value from formatted Woo price
+                let availableToRefund = parseFloat(availableText.replace(/[^\d.-]/g, '')) || 0;
+                let currentRefund = parseFloat(refundAmountInput.val() || 0);
+
+                if (isNaN(currentRefund) || currentRefund === 0 || currentRefund > availableToRefund) {
+                    refundAmountInput.val(availableToRefund.toFixed(2)).trigger('change');
+                }
+            }
+
+            // --- Trigger on item quantity change
+            $(document).on('change keyup', '.refund_order_item_qty', function() {
+                setTimeout(adjustRefundAmount, 10);
+            });
+
+            // --- Trigger on shipping refund amount change
+            $(document).on('change keyup', '.refund_line_total.wc_input_price', function() {
+                setTimeout(adjustRefundAmount, 10);
+            });
+
+            // --- Trigger on refund tax amount change
+            $(document).on('change keyup', '.refund_line_tax.wc_input_price', function() {
+                setTimeout(adjustRefundAmount, 10);
+            });
+
+            // --- Trigger when refund section is opened
+            $(document).on('click', '.do-manual-refund, .refund-items', function() {
+                setTimeout(adjustRefundAmount, 10);
+            });
+        });
+        </script>
+    <?php endif;
+});
+
+
+

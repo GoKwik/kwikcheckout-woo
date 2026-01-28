@@ -21,10 +21,26 @@ GoKwik Checkout plugin integrates seamlessly with WooCommerce to provide a super
 
 ## Compatibility
 
-- Tested up to WooCommerce version: 9.8
+- Tested up to WooCommerce version: 10.0
 - Tested up to WordPress version: 6.8
 
 ## Changelog
+
+### Version 1.2.0
+- [Fix] Resolved issues related to prepaid discount and PPCOD (Advance Paid) functionality.
+- [Fix] Fixed the issue where coupon values were getting removed during order updates.
+- [Feature] Added Fetch Customer API to identify existing users and integrated the merchant new/repeat user API into the discount engine, enabling merchants to configure discounts specifically for new or repeat customers.
+
+### Version 1.1.9
+- [Feature] Added product sync functionality for seamless catalog updates.
+- [Feature] Added support GoKwik discounts and shippings.
+
+### Version 1.1.8
+- [Enhancement] Buy Now button improvements.
+
+### Version 1.1.7
+- [Feature] Added support for Virtual Products.
+- [Enhancement] Minor improvements.
 
 ### Version 1.1.6
 - [Enhancement] Minor improvements to enhance performance and stability.

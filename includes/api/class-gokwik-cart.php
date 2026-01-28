@@ -154,6 +154,11 @@ class GokwikCart
                 'methods' => WP_REST_Server::CREATABLE,
                 'callback' => 'removeOutOfStockItems'
             ],
+			[
+                'route' => '/' . $this->rest_base . '/fetch-customer-details',
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => 'fetchCustomerDetails'
+            ]
         ];
 
         foreach ($routes as $route) {
@@ -340,6 +345,9 @@ class GokwikCart
         } else {
             WC()->cart->persistent_cart_update($userData->ID);
         }
+		
+		$logger = wc_get_logger();
+		$logger->info('Get Cart API : '.json_encode($cartResponse), array('source' => 'custom-log'));
 
         return new WP_REST_Response($cartResponse, 200);
     }
@@ -406,8 +414,12 @@ class GokwikCart
         }
 
         $cart_items = [];
+        $has_virtual_product = false;
         foreach ($cart_data_items as $item) {
             $cart_items[] = $this->prepareCartItem($item, $request);
+            if (isset($item['data']) && $item['data']->is_virtual()) {
+                $has_virtual_product = true;
+            }
         }
 
         $cartObj->calculate_shipping();
@@ -470,8 +482,22 @@ class GokwikCart
                     'charge' => $charge,
                     'tax_cost' => $tax_cost,
                     'taxes' => $taxes,
+                    'payment_mode' => ["cod", "prepaid"],
                 ];
             }
+        }
+
+        if (empty($shipping_methods) && $has_virtual_product) {
+            $shipping_methods[] = [
+                'method_id' => 'free_shipping_virtual',
+                'rate_id' => 'free_shipping',
+                'instance_id' => 0,
+                'method_name' => 'Free Shipping',
+                'charge' => 0,
+                'tax_cost' => 0,
+                'taxes' => [],
+                'payment_mode' => ["cod", "prepaid"],
+            ];
         }
 
         $customerEmail = maybe_unserialize($wc_session_data)['customer_email'] ?? null;
@@ -612,6 +638,17 @@ class GokwikCart
                 $discount_amount = $coupon->get_discount_type() === 'percent'
                     ? ($coupon->get_amount() / 100) * $cartObj->get_total('edit')
                     : $coupon->get_amount();
+
+                if (is_plugin_active('wt-smart-coupons-for-woocommerce/wt-smart-coupon.php')) {
+                    $max_discount = get_post_meta($coupon->get_id(), '_wt_max_discount', true);
+                
+                    if (!empty($max_discount) && floatval($max_discount) > 0) {
+                        if ($discount_amount > floatval($max_discount)) {
+                            $discount_amount = floatval($max_discount);
+                        }
+                    }
+                }
+
                 $coupon_data['amount'] = number_format((float) $discount_amount, 2, '.', '');
                 $coupon_data['discount_value'] = $coupon->get_amount();
             }
@@ -824,7 +861,9 @@ class GokwikCart
         return new WP_REST_Response(
             [
                 'message' => $message,
-                'cart' => $cartData['cartResponse']
+                'cart' => $cartData['cartResponse'],
+                'has_past_orders' => $has_past_orders,
+                'orders_count' => $orders_count,
             ],
             200
         );
@@ -1026,6 +1065,11 @@ class GokwikCart
                 ['status' => 500]
             );
         }
+        if (class_exists('WC_Logger')) {
+            $logger = wc_get_logger();
+            $context = array('source' => 'gokwik_cart_place_order');
+            $logger->info('Request body: ' . wp_json_encode($request->get_params()), $context);
+        }
 
         $session_key = $request->get_param('session_key');
         $cartSessionResponse = $this->loadCartSession($session_key);
@@ -1038,6 +1082,7 @@ class GokwikCart
         $billing_address = wc_clean(wp_unslash($request->get_param('billing')));
         $shipping_address = wc_clean(wp_unslash($request->get_param('shipping')));
         $meta_data = wc_clean(wp_unslash($request->get_param('meta_data')));
+        $meta_data = is_array($meta_data) ? $meta_data : [];
 
         $billing_state = $billing_address['state'] ?? null;
         if (strlen($billing_state) !== 2) {
@@ -1063,7 +1108,7 @@ class GokwikCart
 
         $is_paid = false;
         if (in_array(strtolower($payment_method), ['gokwik_prepaid', 'wallet'])) {
-            $is_paid = $set_paid;
+            $is_paid = (filter_var($set_paid, FILTER_VALIDATE_BOOLEAN) || in_array(strtolower((string) $set_paid), ['yes', '1'], true));
         }
 
         $customer_ip = wc_clean(wp_unslash($request->get_param('customer_ip'))) ?? null;
@@ -1093,20 +1138,10 @@ class GokwikCart
             ]
         );
 
-        $cart_total = WC()->cart->get_total('edit');
         $fee_lines = wc_clean(wp_unslash($request->get_param('fee_lines')));
-        foreach ($fee_lines as $fee) {
-            $cart_total += (float) $fee['total'];
-        }
+        $fee_lines = is_array($fee_lines) ? $fee_lines : [];
 
-        $order_total = (float) wc_clean(wp_unslash($request->get_param('order_total'))) ?? 0;
-        if ($order_total != 0 && abs($cart_total - $order_total) > 0.01) {
-            return new WP_Error(
-                'gc_cart_total_mismatch',
-                'Cart total does not match the order total.',
-                ['status' => 400]
-            );
-        }
+        
 
         $isPendingOrderFlowEnabled = defined('GOKWIKCHECKOUT_PENDING_ORDER_FLOW') && GOKWIKCHECKOUT_PENDING_ORDER_FLOW;
         if ($isPendingOrderFlowEnabled) {
@@ -1132,6 +1167,96 @@ class GokwikCart
                 'Unable to create order.',
                 ['status' => 400]
             );
+        }
+
+        $line_items = $request->get_param('line_items');
+        if (is_array($line_items)) {
+            $order_items = $order->get_items('line_item');
+            $order_item_map = [];
+            foreach ($order_items as $item_id => $item) {
+                $pid = $item->get_product_id();
+                $vid = $item->get_variation_id() ?: 0;
+                $order_item_map[$pid . ':' . $vid] = $item;
+            }
+            foreach ($line_items as $item) {
+                $product_id = isset($item['product_id']) ? intval($item['product_id']) : 0;
+                $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
+                $variation_id = isset($item['variation_id']) ? intval($item['variation_id']) : 0;
+                $key = $product_id . ':' . $variation_id;
+                if (isset($order_item_map[$key])) {
+                    $order_item = $order_item_map[$key];
+                    if ($order_item->get_quantity() != $quantity) {
+                        $order_item->set_quantity($quantity);
+                        $order_item->save();
+                    }
+                } else {
+                    $product = $variation_id ? wc_get_product($variation_id) : wc_get_product($product_id);
+                    if ($product) {
+                        $order->add_product($product, $quantity);
+                    }
+                }
+            }
+        }
+
+        foreach ($order->get_items('shipping') as $item_id => $item) {
+            $order->remove_item($item_id);
+        }
+
+        $discount = $request->get_param('discount');
+        $coupon_code = null;
+        if (!empty($discount) && is_array($discount) && !empty($discount['code']) && isset($discount['amount'])) {
+            $coupon_code = sanitize_text_field($discount['code']);
+            $coupon_amount = floatval($discount['amount']);
+
+            $is_duplicate_coupon = false;
+            if (!empty($cartObj->applied_coupons)) {
+                foreach ($cartObj->applied_coupons as $applied_coupon_code) {
+                    if (strtolower($applied_coupon_code) === strtolower($coupon_code)) {
+                        $is_duplicate_coupon = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$is_duplicate_coupon) {
+                $existing_coupon_codes = array_map('strtolower', $order->get_coupon_codes());
+                if (!in_array(strtolower($coupon_code), $existing_coupon_codes, true)) {
+                    $coupon_item = new \WC_Order_Item_Coupon();
+                    $coupon_item->set_code($coupon_code);
+                    $coupon_item->set_discount(abs($coupon_amount));
+                    $coupon_item->set_discount_tax(0);
+                    $coupon_item->save();
+                    $order->add_item($coupon_item);
+                    $gk_virtual_coupon_amount_applied = abs($coupon_amount);
+                    $existing_coupon_id = function_exists('wc_get_coupon_id_by_code') ? wc_get_coupon_id_by_code($coupon_code) : 0;
+                    if (empty($existing_coupon_id)) {
+                        try {
+                            $wc_coupon = new \WC_Coupon();
+                            $wc_coupon->set_code($coupon_code);
+                            $wc_coupon->set_amount(0);
+                            $wc_coupon->set_discount_type('fixed_cart');
+                            $wc_coupon->set_description(__('GoKwik virtual one-time coupon', 'gokwik'));
+                            $wc_coupon->save();
+                            $created_coupon_id = $wc_coupon->get_id();
+                            if ($created_coupon_id) {
+                                if (function_exists('update_post_meta')) {
+                                    update_post_meta($created_coupon_id, '_gk_virtual_coupon', 'yes');
+                                    update_post_meta($created_coupon_id, '_gk_virtual_dynamic_amount', 'yes');
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                        }
+                    }
+                }
+
+                if (GokwikUtilities::isHposEnabled()) {
+                    $order->update_meta_data('_gk_virtual_coupon_code', $coupon_code);
+                    $order->update_meta_data('_gk_virtual_coupon_amount', $coupon_amount);
+                } else {
+                    update_post_meta($order->get_id(), '_gk_virtual_coupon_code', $coupon_code);
+                    update_post_meta($order->get_id(), '_gk_virtual_coupon_amount', $coupon_amount);
+                }
+            }
         }
 
         if ($session_key) {
@@ -1330,8 +1455,15 @@ class GokwikCart
                     update_post_meta($order->get_id(), $key, $value);
                 }
                 if ($key == 'advance_paid') {
+				$advanceAmount = abs((float) $value);
+
+					if (GokwikUtilities::isHposEnabled()) {
+						$order->update_meta_data('_gk_advance_paid_amount', $advanceAmount);
+					} else {
+						update_post_meta($order->get_id(), '_gk_advance_paid_amount', $advanceAmount);
+					}
                     $fee_lines[] = [
-                        'name' => 'Advance Paid',
+                        'name' => __('Advance Payment', 'gokwik'),
                         'total' => -abs(floatval($value)),
                     ];
                 }
@@ -1453,6 +1585,7 @@ class GokwikCart
                 }
             }
         }
+		$prepaid_discount_amount = 0;
 
         foreach ($fee_lines as $fee) {
             $feeName = $fee['name'] ?? null;
@@ -1460,18 +1593,87 @@ class GokwikCart
             if (empty($feeName) || $feeTotal === 0) {
                 continue;
             }
+            $improvedFeeName = $feeName;
+			if ($feeTotal < 0 && stripos($feeName, 'prepaid') !== false) {
+				$prepaid_discount_amount += abs($feeTotal);
+			}
+            if ($feeTotal < 0) {
+                if (stripos($feeName, 'discount') === false) {
+                    $improvedFeeName = sprintf(__('Discount (%s)', 'gokwik'), $feeName);
+                } else {
+                    $improvedFeeName = $feeName;
+                }
+            } else {
+                if (stripos($feeName, 'fee') === false) {
+                    $improvedFeeName = sprintf(__('Fee (%s)', 'gokwik'), $feeName);
+                } else {
+                    $improvedFeeName = $feeName;
+                }
+            }
+
             $orderItemFee = new \WC_Order_Item_Fee();
-            $orderItemFee->set_name($feeName);
+            $orderItemFee->set_name($improvedFeeName);
             $orderItemFee->set_total($feeTotal);
             $orderItemFee->set_amount($feeTotal);
             $orderItemFee->set_total_tax(0);
-            $orderItemFee->set_tax_class(false);
+            $orderItemFee->set_tax_class('');
             $orderItemFee->set_tax_status('none');
-            $orderItemFee->set_taxes(false);
+            $orderItemFee->set_taxes([]);
             $orderItemFee->save();
             $order->add_item($orderItemFee);
         }
-        
+
+        $shipping_lines = wc_clean(wp_unslash($request->get_param('shipping_lines')));
+        if (!empty($shipping_lines) && is_array($shipping_lines)) {
+            foreach ($shipping_lines as $shipping) {
+                $method_id = $shipping['method_id'] ?? '';
+                $method_title = $shipping['method_title'] ?? '';
+                $total = isset($shipping['total']) ? (float) $shipping['total'] : 0;
+                if (empty($method_id) || $total === 0) {
+                    continue;
+                }
+                $shipping_item = new \WC_Order_Item_Shipping();
+                $shipping_item->set_method_id($method_id);
+                $shipping_item->set_method_title($method_title);
+                $shipping_item->set_total($total);
+                $shipping_item->set_taxes([]);
+                $shipping_item->set_tax_status('none');
+                $shipping_item->save();
+                $order->add_item($shipping_item);
+            }
+        }
+
+        $order->calculate_totals(false);
+        if (isset($gk_virtual_coupon_amount_applied) && $gk_virtual_coupon_amount_applied > 0) {
+            $current_discount_total = (float) $order->get_discount_total();
+            $order->set_discount_total($current_discount_total + $gk_virtual_coupon_amount_applied);
+            $current_total = (float) $order->get_total();
+            $order->set_total(max(0, $current_total - $gk_virtual_coupon_amount_applied));
+        }
+
+        if ($prepaid_discount_amount > 0) {
+
+            // Internal meta (used for calculations & logic)
+            $order->update_meta_data(
+                '_gk_prepaid_discount_amount',
+                (float) $prepaid_discount_amount
+            );
+
+            // Public meta (visible in Admin → Order → Custom Fields)
+            $order->update_meta_data(
+                'prepaid_discount',
+                (float) $prepaid_discount_amount
+            );
+
+        }
+        $order->save();
+        if (function_exists('wc_update_coupon_usage_counts')) {
+            wc_update_coupon_usage_counts($order->get_id());
+        }
+        if (function_exists('wc_update_order_stats')) {
+            wc_update_order_stats($order->get_id());
+        }
+
         if ($transaction_id && !$is_paid) {
             $order->set_transaction_id($transaction_id);
             $meta_key = 'advance_payment_transaction_id';
@@ -1488,10 +1690,11 @@ class GokwikCart
         }
         if ($status === 'processing') {
             $order->update_status($status);
+            $order->save();
+            if (function_exists('wc_update_order_stats')) {
+                wc_update_order_stats($order->get_id());
+            }
         }
-
-        $order->calculate_totals(false);
-        $order->save();
 
         WC()->cart->empty_cart(true);
         $wpdb->delete("{$wpdb->prefix}woocommerce_sessions", ['session_key' => $session_key]);
@@ -1729,7 +1932,7 @@ class GokwikCart
                 ['status' => 400]
             );
         }
-
+		
         $total_refund = 0;
         $is_woo_refund = false;
         foreach ($order->get_refunds() as $refund) {
@@ -1769,7 +1972,7 @@ class GokwikCart
                     foreach ($order->get_items() as $item_id => $item) {
                         $qty = $item->get_quantity();
                         $total = $item->get_total();
-
+                    
                         $refunded_items[$item_id] = [
                             'qty' => $qty,
                             'total' => $total,
@@ -1955,6 +2158,7 @@ class GokwikCart
                 : $product->get_price(),
             'regular_price' => $product->get_regular_price(),
             'sale_price' => $product->get_sale_price(),
+            'category_ids' => $product->get_category_ids() ? $product->get_category_ids() : [],
         ];
 
         if ($product->managing_stock()) {
@@ -1964,8 +2168,11 @@ class GokwikCart
 
         if ($product instanceof \WC_Product_Variation) {
             $parent_product_id = $product->get_parent_id();
+            $parent_product = wc_get_product($parent_product_id);
+
             $cart_item['product_data']['id'] = $parent_product_id;
             $cart_item['product_data']['variation_id'] = $cart_item['variation_id'];
+            $cart_item['product_data']['category_ids'] = $parent_product ? $parent_product->get_category_ids() : [];
         }
 
         $cart_item['product_data']['images'] = $this->getProductImages($product);
@@ -2128,6 +2335,67 @@ class GokwikCart
             ];
         }
         return new WP_REST_Response($response_data, 200);
+    }
+	/**
+     * get customer details
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response||WP_Error
+     * @since 1.2.1
+     */
+    public function fetchCustomerDetails($request)
+    {
+        $response = [
+            'customer_type' => "new_customer",
+            'orders_count'  => 0,
+        ];
+        $customer_phone = $request->get_param('phone') ?? '';
+        if (!empty($customer_phone)) {
+            $plain_phone = preg_replace('/[^0-9]/', '', $customer_phone);
+            if (strlen($plain_phone) < 10 || strlen($plain_phone) > 10) {
+                return new WP_Error(
+                   "Invalid Mobile Number",
+                    ['status' => 400]
+                );
+            }
+            $plain_phone_last10 = substr($plain_phone, -10);
+            $phone_with_cc = $request->get_param('country_code') ?? "+91";
+            $orders_without_cc = wc_get_orders([
+                'type'     => 'shop_order',
+                'limit'    => 1,
+                'paginate' => true,
+                'billing_phone' => $plain_phone_last10,
+                'return'   => 'ids',
+                'status'   => ['completed', 'processing', 'on-hold'],
+                'exclude'  => ['trash'],
+            ]);
+            $orders_with_cc = wc_get_orders([
+                'type'     => 'shop_order',
+                'limit'    => 1,
+                'paginate' => true,
+                'billing_phone' => $phone_with_cc.$plain_phone_last10,
+                'return'   => 'ids',
+                'status'   => ['completed', 'processing', 'on-hold'],
+                'exclude'  => ['trash'],
+            ]);
+            $response['orders_count'] = (int)($orders_without_cc->total ?? 0) + (int)($orders_with_cc->total ?? 0);
+        }else{
+            return new WP_Error(
+                "Mobile Number is empty",
+                 ['status' => 400]
+             );
+        }
+        if ($response['orders_count'] > 0) {
+            $response['customer_type'] = "existing_customer";
+        }
+        return new WP_REST_Response(
+            [
+                'message'       => "Customer Details Fetched Successfully",
+                'orders_count'  => $response['orders_count'],
+                'customer_type' => $response['customer_type'],
+            ],
+            200
+        );
     }
 }
 
