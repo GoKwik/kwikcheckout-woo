@@ -1,101 +1,305 @@
+:root {
+    --gk-color-bg: #fff;
+    --gk-color-primary: #0073aa;
+    --gk-color-success: #27ae60;
+    --gk-color-error: #e74c3c;
+    --gk-color-border: #e2e8f0;
+    --gk-color-shadow: 0 4px 24px rgba(0,0,0,0.07);
+    --gk-color-shadow-light: 0 2px 8px rgba(0,0,0,0.04);
+    --gk-radius: 12px;
+}
+
 .gokwik-settings-page {
-    background-color: #ffffff;
-    padding: 20px;
-    border-radius: 5px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    background: var(--gk-color-bg);
+    padding: 2.5rem 2.25rem 2.25rem 2.25rem;
+    border-radius: var(--gk-radius);
+    box-shadow: var(--gk-color-shadow);
+    margin: 1.5rem 0 2.5rem 0;
+    max-width: 100%;
 }
 
 .gokwik-logo {
     display: block;
-    max-width: 200px;
+    max-width: 6.25rem;
+    height: auto;
     margin: 0;
+    filter: drop-shadow(var(--gk-color-shadow-light));
 }
 
-.woocommerce .form-table th,
-.woocommerce .form-table td {
-    padding: 20px 10px;
+.gokwik-settings-page .form-table th,
+.gokwik-settings-page .form-table td {
+    padding: 1.1rem 1rem;
+    font-size: 1.09rem;
+    vertical-align: middle;
+}
+
+.gokwik-settings-page .form-table th {
+    color: #23272f;
+    font-weight: 700;
+    background: transparent;
+    border-radius: 8px 0 0 8px;
+    flex: 0 0 13.75rem;
+    width: 13.75rem;
+    min-width: 11.25rem;
+    text-align: left;
+}
+
+.gokwik-settings-page .form-table td {
+    border-radius: 0 8px 8px 0;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.gokwik-settings-page .form-table tr {
+    display: flex;
+    column-gap: 0.5rem;
+    width: 100%;
+    border-bottom: 1px solid #f1f5f9;
 }
 
 .gokwik-settings-page h2:not(.nav-tab-wrapper h2) {
-    font-size: 20px;
-    margin-top: 25px;
-    margin-bottom: 15px;
+    font-size: 1.35em;
+    margin: 2.2rem 0 1.1rem 0;
+    font-weight: 800;
+    color: #1a202c;
+    letter-spacing: -0.5px;
 }
 
 .gokwik-nav-tab-wrapper {
-    border-bottom: 1px solid #ccc;
-    margin-bottom: 20px;
+    margin-bottom: 2rem !important;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 0.5rem;
+    background: transparent;
 }
 
 .gokwik-nav-tab {
     background: #f1f1f1;
-    border: 1px solid #ccc;
+    border: 1.5px solid #e2e8f0;
     border-bottom: none;
-    color: #555;
-    padding: 10px 20px;
+    color: #444;
+    padding: 0.75em 2em;
     text-decoration: none;
-    margin-right: 5px;
-    border-radius: 5px 5px 0 0;
+    margin-right: 0.5em;
+    border-radius: 10px 10px 0 0;
+    font-size: 1.09em;
+    font-weight: 600;
+    transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    position: relative;
+    top: 2px;
 }
 
-@media (max-width: 600px) {
-    .gokwik-nav-tab {
-        border-radius: 5px;
-    }
+.gokwik-nav-tab:hover,
+.gokwik-nav-tab:focus {
+    background: #e6f4fa;
+    color: #0073aa;
+    box-shadow: 0 2px 8px rgba(0,115,170,0.09);
+    outline: none;
 }
 
 .gokwik-nav-tab-active {
     background: #fff;
-    border-bottom: 1px solid #fff;
+    border-bottom: 2px solid #fff;
     color: #0073aa;
+    font-weight: 800;
+    z-index: 2;
 }
 
-.gokwik-settings-page label:has(input[type="checkbox"]) {
-    margin: 0px !important;
+.gokwik-settings-page label.gokwik-checkbox-label {
+    margin: 0 !important;
 }
 
-.gokwik-settings-page input[type="checkbox"]:has(+ .slider) {
-    display: none;
-}
-
-.gokwik-settings-page .slider {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 24px;
-    cursor: pointer;
-    background-color: #ebebeb;
-    border-radius: 12px;
-    transition: .3s all ease-in-out;
-    vertical-align: middle;
-}
-
-.gokwik-settings-page .slider:before {
-    position: absolute;
-    content: "";
-    height: 20px;
-    width: 20px;
-    left: 2px;
-    bottom: 2px;
-    background-color: #ffffff;
+.gokwik-settings-page input[type="checkbox"] + .slider {
+    background-color: var(--gk-color-bg);
     border-radius: 50%;
     transition: .3s all ease-in-out;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, .10);
+    box-shadow: 2px 0 8px rgba(0,0,0,0.10);
 }
 
-.gokwik-settings-page input[type="checkbox"]:checked+.slider {
-    background-color: #0073aa;
+.gokwik-settings-page input[type="checkbox"]:checked + .slider {
+    background-color: var(--gk-color-primary);
 }
 
-.gokwik-settings-page input[type="checkbox"]:checked+.slider:before {
+.gokwik-settings-page input[type="checkbox"]:checked + .slider:before {
     transform: translateX(26px);
-    box-shadow: -2px 0 8px rgba(0, 0, 0, .10);
+    box-shadow: -2px 0 8px rgba(0,0,0,0.10);
 }
 
-.gokwik-settings-page input[type="checkbox"]:active+.slider:before {
+.gokwik-settings-page input[type="checkbox"]:active + .slider:before {
     width: 26px;
 }
 
-.gokwik-settings-page input[type="checkbox"]:checked:active+.slider:before {
+.gokwik-settings-page input[type="checkbox"]:checked:active + .slider:before {
     transform: translateX(22px);
+}
+
+.gokwik-settings-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 2.2rem 2.25rem 1.8rem 2.25rem;
+    margin-bottom: 1.2rem;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.06);
+    flex-wrap: wrap;
+    gap: 1.2rem;
+}
+
+.gokwik-header-left {
+    display: flex;
+    align-items: center;
+    gap: 1.7rem;
+}
+
+.gokwik-header-title {
+    font-size: 2.1em;
+    font-weight: 800;
+    color: #1a202c;
+    margin: 0 0 6px 0;
+    letter-spacing: -1px;
+    line-height: 1.1;
+}
+
+.gokwik-header-desc {
+    font-size: 1.13em;
+    color: #3a3a3a;
+    margin-top: 2px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+.gokwik-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5em;
+    min-width: 160px;
+}
+
+#gokwik-sync-products-now {
+    background: linear-gradient(90deg, #0C437B 60%, #1761a0 100%);
+    color: #fff;
+    font-weight: 600;
+    font-size: 1em;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 26px;
+    box-shadow: 0 2px 8px rgba(12,67,123,0.07);
+    transition: background 0.2s, box-shadow 0.2s;
+    margin-bottom: 0;
+    min-width: 0;
+    min-height: 0;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+#gokwik-sync-products-now:focus,
+#gokwik-sync-products-now:hover {
+    background: linear-gradient(90deg, #08294a 60%, #0C437B 100%);
+    outline: 2px solid #0C437B;
+    box-shadow: 0 0 0 2px #b3d2f7;
+}
+
+.gokwik-sync-notice {
+    margin-top: 0.8em;
+    padding: 0.9em 1.2em;
+    border-radius: 8px;
+    font-size: 1.09em;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    gap: 0.7em;
+    font-weight: 500;
+}
+
+.gokwik-sync-icon {
+    font-size: 1.3em;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+}
+
+.gokwik-sync-timestamp {
+    font-size: 0.98em;
+    color: #666;
+    margin-top: 2px;
+    font-style: italic;
+}
+
+.gokwik-sync-notice.notice-success {
+    border-left: 5px solid #27ae60;
+    background: linear-gradient(90deg, #eafaf1 80%, #f8fff8 100%);
+    color: #217a3c;
+}
+
+.gokwik-sync-notice.notice-error {
+    border-left: 5px solid #e74c3c;
+    background: linear-gradient(90deg, #fbeaea 80%, #fff8f8 100%);
+    color: #a12727;
+}
+
+.gokwik-sync-notice.notice-success::before,
+.gokwik-sync-notice.notice-error::before {
+    display: none !important;
+}
+
+.gokwik-sync-disabled {
+    pointer-events: none;
+    opacity: 0.6;
+    cursor: not-allowed !important;
+}
+
+@media (max-width: 1024px) {
+    .gokwik-header-right {
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 700px) {
+    .gokwik-settings-header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 1em 0.5em 0.5em 0.5em;
+        gap: 0.7em;
+    }
+
+    .gokwik-header-right {
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .gokwik-logo {
+        max-width: 90px;
+    }
+    .gokwik-header-title {
+        font-size: 1.4em;
+    }
+}
+
+.gokwik-settings-page input[type="text"],
+.gokwik-settings-page input[type="password"],
+.gokwik-settings-page input[type="email"],
+.gokwik-settings-page select {
+    padding: 0.6em 1em;
+    font-size: 1.09em;
+    border-radius: 6px;
+    border: 1.5px solid #cbd5e1;
+    background: #f8fafc;
+    margin: 0.2em 0;
+    transition: border 0.18s, background 0.18s;
+    box-sizing: border-box;
+}
+
+.gokwik-settings-page input[type="text"]:focus,
+.gokwik-settings-page input[type="password"]:focus,
+.gokwik-settings-page input[type="email"]:focus,
+.gokwik-settings-page select:focus {
+    border: 2px solid #0073aa;
+    background: #fff;
+    outline: none;
 }

@@ -281,8 +281,8 @@ jQuery(document).ready(function () {
         });
     });
 
-    gokwikSdk.on('checkout-initiation-failure', function (error) {
-        handleCheckoutFailure();
+    ['native-redirection', 'checkout-initiation-failure'].forEach(event => {
+        gokwikSdk.on(event, handleCheckoutFailure);
     });
 
     if (!skipGoKwikCheckout) {

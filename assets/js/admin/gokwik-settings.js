@@ -1,11 +1,13 @@
 jQuery(document).ready(function () {
+
     function toggleSettings(settingId, rows) {
         var isEnabled = jQuery(settingId).is(":checked");
         rows.forEach(function (row) {
+            var rowElem = jQuery(row).closest("tr");
             if (isEnabled) {
-                jQuery(row).closest("tr").fadeIn("fast");
+                rowElem.fadeIn("fast");
             } else {
-                jQuery(row).closest("tr").fadeOut("fast");
+                rowElem.fadeOut("fast");
             }
         });
     }
@@ -43,13 +45,9 @@ jQuery(document).ready(function () {
             },
             processResults: function (data) {
                 if (data.success) {
-                    return {
-                        results: data.data
-                    };
+                    return { results: data.data };
                 } else {
-                    return {
-                        results: []
-                    };
+                    return { results: [] };
                 }
             },
             transport: function (params, success, failure) {
@@ -78,35 +76,41 @@ jQuery(document).ready(function () {
 
     var selectedCoupons = gokwikAdmin.selectedCoupons || [];
     if (selectedCoupons.length > 0) {
-        var $select = jQuery("#wc_settings_gokwik_selected_coupons");
+        var selectElem = jQuery("#wc_settings_gokwik_selected_coupons");
         selectedCoupons.forEach(function (coupon) {
             var option = new Option(coupon.text, coupon.id, true, true);
-            $select.append(option).trigger("change");
+            selectElem.append(option).trigger("change");
         });
     }
 
-    const settingsActions = [
-        { selector: "#wc_settings_gokwik_section_show_coupons_list", action: toggleCouponSettings },
-        { selector: "#wc_settings_gokwik_section_enable_checkout", action: toggleCheckoutSettings }
+    var settingsActions = [
+        {
+            selector: "#wc_settings_gokwik_section_show_coupons_list",
+            action: toggleCouponSettings
+        },
+        {
+            selector: "#wc_settings_gokwik_section_enable_checkout",
+            action: toggleCheckoutSettings
+        }
     ];
 
-    settingsActions.forEach(({ selector, action }) => {
-        action();
-        jQuery(selector).on("change", action);
+    settingsActions.forEach(function (item) {
+        item.action();
+        jQuery(item.selector).on("change", item.action);
     });
 
-    const cartPageCheckbox = jQuery("#wc_settings_gokwik_section_enable_checkout_from_cart_page");
-    const sideCartCheckbox = jQuery("#wc_settings_gokwik_section_enable_checkout_from_side_cart");
-    const checkoutCheckbox = jQuery("#wc_settings_gokwik_section_enable_checkout");
+    var cartPageCheckbox = jQuery("#wc_settings_gokwik_section_enable_checkout_from_cart_page");
+    var sideCartCheckbox = jQuery("#wc_settings_gokwik_section_enable_checkout_from_side_cart");
+    var checkoutCheckbox = jQuery("#wc_settings_gokwik_section_enable_checkout");
 
     function updateCheckoutCheckbox() {
-        const isCartChecked = cartPageCheckbox.is(":checked");
-        const isSideCartChecked = sideCartCheckbox.is(":checked");
+        var isCartChecked = cartPageCheckbox.is(":checked");
+        var isSideCartChecked = sideCartCheckbox.is(":checked");
         checkoutCheckbox.prop("checked", isCartChecked || isSideCartChecked);
     }
 
     function updateCartAndSideCartCheckboxes() {
-        const isCheckoutEnabled = checkoutCheckbox.is(":checked");
+        var isCheckoutEnabled = checkoutCheckbox.is(":checked");
         cartPageCheckbox.add(sideCartCheckbox).prop("checked", isCheckoutEnabled);
     }
 
@@ -121,4 +125,51 @@ jQuery(document).ready(function () {
             jQuery(this).attr("type", "password");
         }
     );
+
+    jQuery(".gokwik-password-toggle").on("click", function () {
+        var inputElem = jQuery(this).siblings("input");
+        if (inputElem.attr("type") === "password") {
+            inputElem.attr("type", "text");
+        } else {
+            inputElem.attr("type", "password");
+        }
+    });
+
+    var syncBtn = jQuery('#gokwik-sync-products-now');
+    var resultDiv = jQuery('#gokwik-sync-products-result');
+
+    function setSyncBtnDisabled(disabled) {
+        if (disabled) {
+            syncBtn.addClass('gokwik-sync-disabled')
+                .attr('aria-disabled', 'true')
+                .attr('tabindex', '-1');
+            syncBtn.text('Syncing...');
+        } else {
+            syncBtn.removeClass('gokwik-sync-disabled')
+                .removeAttr('aria-disabled')
+                .removeAttr('tabindex');
+            syncBtn.text('Sync Products Now');
+        }
+    }
+
+    if (
+        typeof gokwikSyncStatus !== 'undefined' &&
+        (gokwikSyncStatus.isSyncing || gokwikSyncStatus.isScheduled)
+    ) {
+        setSyncBtnDisabled(true);
+    } else {
+        setSyncBtnDisabled(false);
+    }
+
+    syncBtn.on('click', function (e) {
+        if (syncBtn.hasClass('gokwik-sync-disabled')) {
+            e.preventDefault();
+            return false;
+        }
+        setSyncBtnDisabled(true);
+        setTimeout(function () {
+            window.location.reload();
+        }, 60000);
+    });
+
 });

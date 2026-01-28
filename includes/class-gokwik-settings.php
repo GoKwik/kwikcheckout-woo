@@ -31,6 +31,8 @@ class GokwikSettings
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_scripts']);
         add_action('wp_ajax_search_coupons', [__CLASS__, 'search_coupons']);
         add_action('wp_ajax_search_products', [__CLASS__, 'search_products']);
+        add_action('wp_ajax_gokwik_sync_products_now', [__CLASS__, 'ajax_sync_products_now']);
+        add_action('gokwik_product_sync_cron', [__CLASS__, 'handle_product_sync_cron']);
     }
 
     /**
@@ -63,10 +65,45 @@ class GokwikSettings
             $admin_urls[$section] = admin_url("admin.php?page=wc-settings&tab=gokwik_checkout&section=$section");
             $active_classes[$section] = $current_section === $section ? 'gokwik-nav-tab-active nav-tab-active' : '';
         }
+
+        $last_sync_time = get_option('gokwik_product_sync_last_time');
+        $last_sync_status = get_option('gokwik_product_sync_last_notice');
+        if ($last_sync_status === 'failed') {
+            $last_sync_display = 'Failed';
+        } elseif ($last_sync_time) {
+            $human_sync = human_time_diff($last_sync_time, current_time('timestamp'));
+            $last_sync_display = $human_sync ? $human_sync . ' ago' : date_i18n('Y-m-d H:i:s', $last_sync_time);
+        } else {
+            $last_sync_display = 'Never';
+        }
+
+        $is_syncing = get_transient(\Gokwik_Checkout\Inc\GokwikProductSync::SYNC_TRANSIENT) ? true : false;
+        $is_scheduled = wp_next_scheduled('gokwik_product_sync_cron') ? true : false;
+        if (isset($_GET['gokwik_sync_products_now']) && current_user_can('manage_woocommerce')) {
+            if (!$is_syncing && !$is_scheduled) {
+                update_option('gokwik_product_sync_last_notice', 'scheduled');
+                wp_schedule_single_event(time() + 1, 'gokwik_product_sync_cron');
+            }
+            wp_redirect(remove_query_arg('gokwik_sync_products_now'));
+            exit;
+        }
+        echo '<script>var gokwikSyncStatus = ' . json_encode(['isSyncing' => $is_syncing, 'isScheduled' => $is_scheduled]) . ';</script>';
         ?>
         <div class="gokwik-settings-page">
-            <img src="<?php echo esc_url(plugins_url('assets/images/gokwik-logo.png', GOKWIKCHECKOUT_FILE)); ?>" alt="GoKwik Logo" class="gokwik-logo">
-            <p style="font-size: 1.1em;">GoKwik helps increase conversion rates and reduce RTO. Need help? <a href="https://www.gokwik.co/contact" target="_blank" style="text-decoration: none;">Contact Us</a></p>
+            <div class="gokwik-settings-header">
+                <div class="gokwik-header-left">
+                    <img src="<?php echo esc_url(plugins_url('assets/images/gokwik-logo.svg', GOKWIKCHECKOUT_FILE)); ?>" alt="GoKwik Logo" class="gokwik-logo" style="max-width:100px;height:auto;">
+                    <div>
+                        <div class="gokwik-header-title">GoKwik Checkout Settings</div>
+                        <div class="gokwik-header-desc">Boost your conversions and reduce RTO with GoKwik's fast, reliable, and optimized checkout experience.</div>
+                    </div>
+                </div>
+                <div class="gokwik-header-right">
+                    <a href="<?php echo esc_url(add_query_arg('gokwik_sync_products_now', '1')); ?>" id="gokwik-sync-products-now" class="button button-primary">Sync Products Now</a>
+                    <div class="gokwik-sync-timestamp">Last Sync: <?php echo esc_html($last_sync_display); ?></div>
+                </div>
+            </div>
+            <div id="gokwik-sync-products-result"></div>
             <h2 class="nav-tab-wrapper gokwik-nav-tab-wrapper">
                 <?php foreach ($sections as $section => $label): ?>
                     <a href="<?php echo esc_url($admin_urls[$section]); ?>" class="nav-tab gokwik-nav-tab <?php echo esc_attr($active_classes[$section]); ?>"><?php echo esc_html($label); ?></a>
@@ -196,6 +233,14 @@ class GokwikSettings
                 'id' => 'wc_settings_gokwik_section_allow_pending_flow',
                 'desc_tip' => 'Enable to create orders in payment pending state.',
             ],
+			'gokwik_enable_ppcod_order_total_format' => [
+			'name' => 'Enable PPCOD Order Total format including Advance Amount',
+			'type' => 'checkbox',
+			'desc' => 'PPCOD “Order Total” Calculation will include advance paid amount.',
+			'default' => 'no',
+			'id' => 'wc_settings_gokwik_section_enable_ppcod_order_total_format',
+			'desc_tip' => 'Enable to show the new PPCOD order summary layout.',
+			],
         ];
 
         $site_url = parse_url(get_site_url(), PHP_URL_HOST);
@@ -341,14 +386,28 @@ class GokwikSettings
      */
     public static function enqueue_scripts()
     {
-        $script_url = plugin_dir_url(GOKWIKCHECKOUT_FILE) . 'assets/js/admin/gokwik-settings.js';
-        wp_enqueue_script('gokwik-settings-js', $script_url, ['jquery', 'select2'], time(), true);
-
-        wp_localize_script('gokwik-settings-js', 'gokwikAdmin', [
-            'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('search-coupons'),
-            'selectedCoupons' => self::get_selected_coupons()
-        ]);
+        $screen = get_current_screen();
+        if (
+            (isset($_GET['page']) && $_GET['page'] === 'wc-settings' && isset($_GET['tab']) && $_GET['tab'] === 'gokwik_checkout') ||
+            (method_exists($screen, 'id') && $screen->id === 'woocommerce_page_wc-settings')
+        ) {
+            wp_enqueue_script(
+                'gokwik-settings-admin',
+                plugins_url('../assets/js/admin/gokwik-settings.js', __FILE__),
+                ['jquery'],
+                filemtime(plugin_dir_path(__FILE__) . '../assets/js/admin/gokwik-settings.js'),
+                true
+            );
+            wp_localize_script(
+                'gokwik-settings-admin',
+                'gokwikAdmin',
+                [
+                    'ajaxurl' => admin_url('admin-ajax.php'),
+                    'nonce'   => wp_create_nonce('search-coupons'),
+                    'selectedCoupons' => method_exists(__CLASS__, 'get_selected_coupons') ? self::get_selected_coupons() : [],
+                ]
+            );
+        }
     }
 
     /**
@@ -399,6 +458,45 @@ class GokwikSettings
             wp_send_json_success([], 200);
         } else {
             wp_send_json_success($unique_results);
+        }
+    }
+
+    /**
+     * AJAX handler to start product sync.
+     */
+    public static function ajax_sync_products_now() {
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(['message' => 'Permission denied.'], 403);
+        }
+        if (get_transient(\Gokwik_Checkout\Inc\GokwikProductSync::SYNC_TRANSIENT)) {
+            wp_send_json_error(['message' => 'Sync already running.'], 409);
+        }
+        update_option('gokwik_product_sync_last_notice', 'started');
+        $result = \Gokwik_Checkout\Inc\GokwikProductSync::sync_all_products(true);
+        update_option('gokwik_product_sync_last_time', current_time('timestamp'));
+        if (!empty($result[0])) {
+            update_option('gokwik_product_sync_last_notice', 'completed');
+            wp_send_json_success(['message' => $result[1], 'result' => $result]);
+        } else {
+            update_option('gokwik_product_sync_last_notice', 'failed');
+            wp_send_json_error(['message' => $result[1], 'result' => $result]);
+        }
+    }
+
+    /**
+     * Handle the scheduled product sync cron event.
+     */
+    public static function handle_product_sync_cron() {
+        if (get_transient(\Gokwik_Checkout\Inc\GokwikProductSync::SYNC_TRANSIENT)) {
+            return;
+        }
+        update_option('gokwik_product_sync_last_notice', 'started');
+        $result = \Gokwik_Checkout\Inc\GokwikProductSync::sync_all_products(true);
+        update_option('gokwik_product_sync_last_time', current_time('timestamp'));
+        if (!empty($result[0])) {
+            update_option('gokwik_product_sync_last_notice', 'completed');
+        } else {
+            update_option('gokwik_product_sync_last_notice', 'failed');
         }
     }
 
