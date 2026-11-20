@@ -5,6 +5,8 @@
     "author_profile": "https://gokwik.co",
     "version": "1.1.6",
     "download_url": "https://github.com/GoKwik/kwikcheckout-woo/releases/download/v1.1.6/gokwik-checkout.zip",
+    "sha256": "",
+    "signature": "",
     "requires": "5.4",
     "tested": "6.8.1",
     "requires_php": "7.4",
