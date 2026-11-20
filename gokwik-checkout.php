@@ -301,7 +301,7 @@ function gc_cart_clear_and_redirect()
         }
         
         $order = wc_get_order($order_id);
-        if ($order) {
+        if ($order && gc_order_belongs_to_current_shopper($order)) {
             $redirectUrl = $order->get_checkout_order_received_url();
             $woocommerce->cart->empty_cart();
             if ($woocommerce->cart->is_empty()) {
@@ -315,6 +315,44 @@ function gc_cart_clear_and_redirect()
 
     wp_send_json($response);
     exit;
+}
+
+/**
+ * Check that an order was placed from the current shopper's cart session.
+ * The thank-you URL carries the order key, so it is only returned to the session that placed the order.
+ *
+ * @param WC_Order $order
+ *
+ * @return bool
+ */
+function gc_order_belongs_to_current_shopper($order)
+{
+    $current_user_id = get_current_user_id();
+    if ($current_user_id && (int) $order->get_customer_id() === $current_user_id) {
+        return true;
+    }
+
+    $order_session_key = GokwikUtilities::isHposEnabled()
+        ? $order->get_meta('_gk_session_key', true)
+        : get_post_meta($order->get_id(), '_gk_session_key', true);
+
+    if (empty($order_session_key) || !isset(WC()->session)) {
+        return false;
+    }
+
+    $session_cookie = WC()->session->get_session_cookie();
+    $session_keys = array_filter([
+        (string) WC()->session->get_customer_id(),
+        $session_cookie ? (string) $session_cookie[0] : '',
+    ]);
+
+    foreach ($session_keys as $session_key) {
+        if (hash_equals((string) $order_session_key, $session_key)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
