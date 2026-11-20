@@ -142,7 +142,7 @@ class GokwikCart
                 'route' => '/' . $this->rest_base . '/process-refund',
                 'methods' => WP_REST_Server::CREATABLE,
                 'callback' => 'refundProcess',
-                'permission_callback' => false
+                'permission_callback' => 'validateRefundWebhookRequest'
             ],
             [
                 'route' => '/' . $this->rest_base . '/health-check',
@@ -164,7 +164,7 @@ class GokwikCart
                     [
                         'methods' => $route['methods'],
                         'callback' => [$this, $route['callback']],
-                        'permission_callback' => $route['permission_callback'] ?? [$this, 'validateRequest'],
+                        'permission_callback' => [$this, $route['permission_callback'] ?? 'validateRequest'],
                     ],
                 ]
             );
@@ -195,6 +195,68 @@ class GokwikCart
         $storedAppSecret = get_option('wc_settings_gokwik_section_app_secret', null);
 
         return $apiId === $storedAppId && $apiSecret === $storedAppSecret;
+    }
+
+    /**
+     * Authenticate the refund webhook.
+     * Accepts the same app-id/app-secret headers as the other routes. GoKwik does not send them on
+     * refund webhooks yet, so unauthenticated calls are only logged until the
+     * "Require Authenticated Refund Webhook" setting is turned on.
+     *
+     * @param WP_REST_Request $request
+     *
+     * @return bool
+     */
+    public function validateRefundWebhookRequest($request)
+    {
+        if ($this->validateRequest($request)) {
+            return true;
+        }
+
+        if (get_option('wc_settings_gokwik_section_require_refund_webhook_auth', 'no') === 'yes') {
+            return false;
+        }
+
+        wc_get_logger()->warning(
+            'Refund webhook received without valid app-id/app-secret headers.',
+            ['source' => 'gokwik-checkout']
+        );
+        return true;
+    }
+
+    /**
+     * Build the refund webhook digest the way GoKwik computes it:
+     * sha512 hex of "merchantReferenceId|paymentId|amount", with amount written as a JS number.
+     *
+     * @param mixed $merchantReferenceId
+     * @param mixed $paymentId
+     * @param mixed $amount
+     *
+     * @return string|null Null when a field is missing or not a scalar.
+     */
+    protected function refundWebhookDigest($merchantReferenceId, $paymentId, $amount)
+    {
+        foreach ([$merchantReferenceId, $paymentId, $amount] as $field) {
+            if (!is_scalar($field) || $field === '' || is_bool($field)) {
+                return null;
+            }
+        }
+
+        if (is_float($amount)) {
+            if (floor($amount) == $amount && abs($amount) < 1e15) {
+                $amount = sprintf('%.0f', $amount);
+            } else {
+                for ($precision = 1; $precision <= 17; $precision++) {
+                    $formatted = sprintf('%.' . $precision . 'G', $amount);
+                    if ((float) $formatted === $amount) {
+                        break;
+                    }
+                }
+                $amount = $formatted;
+            }
+        }
+
+        return hash('sha512', $merchantReferenceId . '|' . $paymentId . '|' . $amount);
     }
 
     /**
@@ -1685,7 +1747,22 @@ class GokwikCart
             );
         }
 
-        if (!ctype_xdigit($hmac) || strlen($hmac) !== 128) {
+        $raw_field = function ($param) use ($request_data) {
+            return $request_data[$param] ?? $request_data['data'][$param] ?? null;
+        };
+        $expected_hmac = $this->refundWebhookDigest(
+            $raw_field('merchantReferenceId'),
+            $raw_field('paymentId'),
+            $raw_field('amount')
+        );
+
+        if (
+            !is_string($hmac)
+            || !ctype_xdigit($hmac)
+            || strlen($hmac) !== 128
+            || $expected_hmac === null
+            || !hash_equals($expected_hmac, strtolower($hmac))
+        ) {
             return new WP_Error(
                 'gc_invalid_hmac',
                 'Invalid hmac.',

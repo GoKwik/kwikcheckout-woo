@@ -196,6 +196,14 @@ class GokwikSettings
                 'id' => 'wc_settings_gokwik_section_allow_pending_flow',
                 'desc_tip' => 'Enable to create orders in payment pending state.',
             ],
+            'gokwik_require_refund_webhook_auth' => [
+                'name' => 'Require Authenticated Refund Webhook',
+                'type' => 'checkbox',
+                'desc' => 'Reject refund webhooks that do not carry the App ID and App Secret headers.',
+                'default' => 'no',
+                'id' => 'wc_settings_gokwik_section_require_refund_webhook_auth',
+                'desc_tip' => 'Enable once GoKwik confirms refund webhooks for this store are sent with App ID and App Secret.',
+            ],
         ];
 
         $site_url = parse_url(get_site_url(), PHP_URL_HOST);
