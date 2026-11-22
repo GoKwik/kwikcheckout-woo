@@ -196,6 +196,14 @@ class GokwikSettings
                 'id' => 'wc_settings_gokwik_section_allow_pending_flow',
                 'desc_tip' => 'Enable to create orders in payment pending state.',
             ],
+            'gokwik_allow_unsigned_refund_webhook' => [
+                'name' => 'Accept Unsigned Refund Webhooks (legacy)',
+                'type' => 'checkbox',
+                'desc' => 'Not recommended. Accepts refund webhooks that carry neither the App ID/App Secret headers nor an hmac keyed with the App Secret, so anyone who knows a GoKwik order id can mark that order refunded.',
+                'default' => 'no',
+                'id' => 'wc_settings_gokwik_section_allow_unsigned_refund_webhook',
+                'desc_tip' => 'Leave off. Turn on only temporarily, if GoKwik has not yet started signing refund webhooks for this store and refunds must sync meanwhile.',
+            ],
         ];
 
         $site_url = parse_url(get_site_url(), PHP_URL_HOST);
