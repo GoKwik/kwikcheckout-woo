@@ -198,10 +198,13 @@ class GokwikCart
     }
 
     /**
-     * Authenticate the refund webhook.
-     * Accepts the same app-id/app-secret headers as the other routes. GoKwik does not send them on
-     * refund webhooks yet, so unauthenticated calls are only logged until the
-     * "Require Authenticated Refund Webhook" setting is turned on.
+     * Authenticate the refund webhook. Fails closed: the request must carry either
+     *  - the same app-id/app-secret headers as the other routes, or
+     *  - an `hmac` keyed with this store's GoKwik App Secret:
+     *    hash_hmac('sha512', "merchantReferenceId|paymentId|amount", App Secret).
+     * GoKwik's sender currently sends an unkeyed sha512 of those values, which anyone can compute,
+     * so those webhooks are rejected unless the store explicitly enables
+     * "Accept Unsigned Refund Webhooks (legacy)".
      *
      * @param WP_REST_Request $request
      *
@@ -213,20 +216,66 @@ class GokwikCart
             return true;
         }
 
-        if (get_option('wc_settings_gokwik_section_require_refund_webhook_auth', 'no') === 'yes') {
-            return false;
+        if ($this->refundWebhookSignature($request->get_json_params()) === 'keyed') {
+            return true;
+        }
+
+        if (get_option('wc_settings_gokwik_section_allow_unsigned_refund_webhook', 'no') === 'yes') {
+            wc_get_logger()->warning(
+                'Accepted an unsigned refund webhook because "Accept Unsigned Refund Webhooks (legacy)" is on.',
+                ['source' => 'gokwik-checkout']
+            );
+            return true;
         }
 
         wc_get_logger()->warning(
-            'Refund webhook received without valid app-id/app-secret headers.',
+            'Rejected a refund webhook without app-id/app-secret headers or an App Secret keyed hmac.',
             ['source' => 'gokwik-checkout']
         );
-        return true;
+        return false;
     }
 
     /**
-     * Build the refund webhook digest the way GoKwik computes it:
-     * sha512 hex of "merchantReferenceId|paymentId|amount", with amount written as a JS number.
+     * Which digest the refund webhook's `hmac` matches.
+     *
+     * @param mixed $request_data Decoded JSON body (fields at top level or under `data`).
+     *
+     * @return string|null 'keyed' (HMAC-SHA512 with the App Secret), 'legacy' (unkeyed sha512, integrity
+     *                     only) or null when the hmac is missing, malformed or matches neither.
+     */
+    protected function refundWebhookSignature($request_data)
+    {
+        if (!is_array($request_data)) {
+            return null;
+        }
+
+        $field = function ($param) use ($request_data) {
+            $data = is_array($request_data['data'] ?? null) ? $request_data['data'] : [];
+            return $request_data[$param] ?? $data[$param] ?? null;
+        };
+
+        $hmac = $field('hmac');
+        if (!is_string($hmac) || strlen($hmac) !== 128 || !ctype_xdigit($hmac)) {
+            return null;
+        }
+        $hmac = strtolower($hmac);
+
+        $payload = $this->refundWebhookPayload($field('merchantReferenceId'), $field('paymentId'), $field('amount'));
+        if ($payload === null) {
+            return null;
+        }
+
+        $appSecret = get_option('wc_settings_gokwik_section_app_secret', null);
+        if (is_string($appSecret) && $appSecret !== '' && hash_equals(hash_hmac('sha512', $payload, $appSecret), $hmac)) {
+            return 'keyed';
+        }
+
+        return hash_equals(hash('sha512', $payload), $hmac) ? 'legacy' : null;
+    }
+
+    /**
+     * Canonical refund webhook payload as GoKwik builds it: "merchantReferenceId|paymentId|amount",
+     * with amount written as a JS number.
      *
      * @param mixed $merchantReferenceId
      * @param mixed $paymentId
@@ -234,7 +283,7 @@ class GokwikCart
      *
      * @return string|null Null when a field is missing or not a scalar.
      */
-    protected function refundWebhookDigest($merchantReferenceId, $paymentId, $amount)
+    protected function refundWebhookPayload($merchantReferenceId, $paymentId, $amount)
     {
         foreach ([$merchantReferenceId, $paymentId, $amount] as $field) {
             if (!is_scalar($field) || $field === '' || is_bool($field)) {
@@ -256,7 +305,7 @@ class GokwikCart
             }
         }
 
-        return hash('sha512', $merchantReferenceId . '|' . $paymentId . '|' . $amount);
+        return $merchantReferenceId . '|' . $paymentId . '|' . $amount;
     }
 
     /**
@@ -1747,22 +1796,9 @@ class GokwikCart
             );
         }
 
-        $raw_field = function ($param) use ($request_data) {
-            return $request_data[$param] ?? $request_data['data'][$param] ?? null;
-        };
-        $expected_hmac = $this->refundWebhookDigest(
-            $raw_field('merchantReferenceId'),
-            $raw_field('paymentId'),
-            $raw_field('amount')
-        );
-
-        if (
-            !is_string($hmac)
-            || !ctype_xdigit($hmac)
-            || strlen($hmac) !== 128
-            || $expected_hmac === null
-            || !hash_equals($expected_hmac, strtolower($hmac))
-        ) {
+        // Authentication is decided in validateRefundWebhookRequest; here the hmac must still match the
+        // fields it covers, so the order, payment and amount cannot be swapped after signing.
+        if ($this->refundWebhookSignature($request_data) === null) {
             return new WP_Error(
                 'gc_invalid_hmac',
                 'Invalid hmac.',
