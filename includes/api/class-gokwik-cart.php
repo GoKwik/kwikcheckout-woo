@@ -141,8 +141,7 @@ class GokwikCart
             [
                 'route' => '/' . $this->rest_base . '/process-refund',
                 'methods' => WP_REST_Server::CREATABLE,
-                'callback' => 'refundProcess',
-                'permission_callback' => false
+                'callback' => 'refundProcess'
             ],
             [
                 'route' => '/' . $this->rest_base . '/health-check',
@@ -1722,7 +1721,9 @@ class GokwikCart
             );
         }
 
-        if ($order->get_transaction_id() && $order->get_transaction_id() != $transactionPaymentId) {
+        // The refund must name the transaction this order was paid with; an order with no stored
+        // transaction id cannot be matched, so it is refused rather than skipped.
+        if (!$order->get_transaction_id() || $order->get_transaction_id() != $transactionPaymentId) {
             return new WP_Error(
                 'gc_invalid_transaction',
                 'Invalid Transaction.',
